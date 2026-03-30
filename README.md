@@ -28,7 +28,7 @@
 ### 1. 启动服务
 
 ```bash
-cd erp-system
+cd productdb
 docker-compose up -d
 ```
 
@@ -151,7 +151,7 @@ alembic upgrade head
 ## 📁 项目结构
 
 ```
-erp-system/
+productdb/
 ├── app/
 │   ├── main.py          # FastAPI 应用入口
 │   ├── config.py        # 配置管理

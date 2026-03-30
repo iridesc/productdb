@@ -1,22 +1,22 @@
 services:
   postgres:
     image: docker.m.daocloud.io/library/postgres:15-alpine
-    container_name: erp-postgres
+    container_name: productdb-postgres
     environment:
       HTTP_PROXY: ""
       HTTPS_PROXY: ""
       http_proxy: ""
       https_proxy: ""
       NO_PROXY: "*"
-      POSTGRES_USER: erp_user
-      POSTGRES_PASSWORD: erp_password
-      POSTGRES_DB: erp_db
+      POSTGRES_USER: productdb_user
+      POSTGRES_PASSWORD: productdb_password
+      POSTGRES_DB: productdb
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
       - "5433:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U erp_user -d erp_db"]
+      test: ["CMD-SHELL", "pg_isready -U productdb_user -d productdb"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -25,15 +25,15 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: docker.m.daocloud.io/library/erp-api:latest
-    container_name: erp-api
+    image: docker.m.daocloud.io/library/productdb-api:latest
+    container_name: productdb-api
     environment:
       HTTP_PROXY: ""
       HTTPS_PROXY: ""
       http_proxy: ""
       https_proxy: ""
       NO_PROXY: "*"
-      DATABASE_URL: postgresql://erp_user:erp_password@postgres:5432/erp_db
+      DATABASE_URL: postgresql://productdb_user:productdb_password@postgres:5432/productdb
       SECRET_KEY: your-secret-key-change-in-production
       ALGORITHM: HS256
       ACCESS_TOKEN_EXPIRE_MINUTES: 30
@@ -51,8 +51,8 @@ services:
     build:
       context: ./web
       dockerfile: ../Dockerfile.web
-    image: docker.m.daocloud.io/library/erp-web:latest
-    container_name: erp-web
+    image: docker.m.daocloud.io/library/productdb-web:latest
+    container_name: productdb-web
     environment:
       HTTP_PROXY: ""
       HTTPS_PROXY: ""
