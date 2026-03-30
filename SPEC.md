@@ -2,7 +2,7 @@
 
 ## 1. 项目概述
 
-- **项目名称**: erp-system
+- **项目名称**: productdb
 - **类型**: RESTful API 后端服务
 - **核心功能**: 物料管理、产品BOM、生产订单、销售订单的ERP系统
 - **目标用户**: 制造业、组装企业
@@ -145,7 +145,7 @@
 ## 5. 部署结构
 
 ```
-erp-system/
+productdb/
 ├── docker-compose.yml
 ├── app/
 │   ├── main.py

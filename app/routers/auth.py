@@ -51,7 +51,7 @@ def register(
     hashed_password = get_password_hash(user_data.password)
     new_user = User(
         username=user_data.username,
-        email=f"{user_data.username}@erp.local",
+        email=f"{user_data.username}@productdb.local",
         hashed_password=hashed_password,
         full_name="管理员",
         is_active=True,

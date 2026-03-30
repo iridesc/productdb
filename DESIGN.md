@@ -439,7 +439,7 @@
 ## 十、项目结构
 
 ```
-erp-system/
+productdb/
 ├── app/                  # 后端 API
 │   ├── main.py
 │   ├── config.py
