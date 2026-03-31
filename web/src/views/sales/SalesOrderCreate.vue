@@ -14,7 +14,8 @@ const form = ref({
   customer_address: '',
   express_no: '',
   remark: '',
-  items: [] as any[]
+  items: [] as any[],
+  order_date: new Date().toISOString().split('T')[0]
 })
 
 // 商品选择
@@ -68,26 +69,26 @@ const totalAmount = computed(() => {
 
 // 提交
 async function handleSubmit() {
-  if (!form.value.customer_name) {
-    showToast('请填写客户名称')
-    return
-  }
-  if (!form.value.express_no) {
-    showToast('请填写快递单号')
-    return
-  }
-  if (form.value.items.length === 0) {
-    showToast('请添加商品')
+  if (!form.value.customer_address) {
+    showToast('请填写客户地址（必填）')
     return
   }
 
   loading.value = true
   try {
-    await createSalesOrder(form.value as any)
+    const data = {
+      customer_name: form.value.customer_name || undefined,
+      customer_address: form.value.customer_address || undefined,
+      express_no: form.value.express_no || undefined,
+      remark: form.value.remark || undefined,
+      items: form.value.items.length > 0 ? form.value.items : undefined,
+      order_date: form.value.order_date
+    }
+    await createSalesOrder(data)
     showToast('创建成功')
     router.back()
   } catch (e: any) {
-    showToast(e.message || '创建失败')
+    showToast(e.response?.data?.detail || e.message || '创建失败')
   } finally {
     loading.value = false
   }
@@ -103,8 +104,8 @@ loadProducts()
     <van-form @submit="handleSubmit">
       <!-- 客户信息 -->
       <van-cell-group inset title="客户信息">
-        <van-field v-model="form.customer_name" label="客户名称" placeholder="请输入" />
-        <van-field v-model="form.customer_address" label="客户地址" placeholder="请输入" />
+        <van-field v-model="form.customer_name" label="客户名称" placeholder="请输入（选填）" />
+        <van-field v-model="form.customer_address" label="客户地址" placeholder="请输入（必填）" required />
       </van-cell-group>
 
       <!-- 快递信息 -->
@@ -112,8 +113,7 @@ loadProducts()
         <van-field 
           v-model="form.express_no" 
           label="快递单号" 
-          placeholder="必填"
-          :rules="[{ required: true, message: '请填写快递单号' }]"
+          placeholder="请输入（选填）"
         />
       </van-cell-group>
 

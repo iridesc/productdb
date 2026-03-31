@@ -4,7 +4,7 @@ from sqlalchemy.orm import relationship
 from datetime import datetime
 import uuid
 import enum
-from app.database import Base
+from database import Base
 
 
 class BOM(Base):
@@ -55,7 +55,10 @@ class SalesOrder(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     order_no = Column(String(20), unique=True, nullable=False, index=True)
-    customer_id = Column(UUID(as_uuid=True), ForeignKey("customers.id"), nullable=False)
+    customer_id = Column(UUID(as_uuid=True), ForeignKey("customers.id"), nullable=True)
+    customer_name = Column(String(100), nullable=True)
+    customer_address = Column(String(200), nullable=True)
+    express_no = Column(String(50), nullable=True)
     order_date = Column(Date, nullable=False)
     delivery_date = Column(Date, nullable=True)
     status = Column(Enum(SalesOrderStatusEnum), default=SalesOrderStatusEnum.DRAFT)
@@ -78,6 +81,7 @@ class SalesOrderItem(Base):
     quantity = Column(Numeric(10, 2), nullable=False)
     unit_price = Column(Numeric(10, 2), nullable=False)
     amount = Column(Numeric(12, 2), nullable=False)
+    is_confirmed = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     order = relationship("SalesOrder", back_populates="items")

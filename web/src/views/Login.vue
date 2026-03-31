@@ -20,8 +20,11 @@ async function handleLogin() {
   
   loading.value = true
   try {
-    const res: any = await request.post('/auth/login', null, {
-      params: { username: username.value, password: password.value }
+    const formData = new FormData()
+    formData.append('username', username.value)
+    formData.append('password', password.value)
+    const res: any = await request.post('/auth/login', formData, {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
     })
     userStore.setToken(res.access_token)
     showToast('登录成功')

@@ -4,7 +4,7 @@ from sqlalchemy.orm import relationship
 from datetime import datetime
 import uuid
 import enum
-from app.database import Base
+from database import Base
 
 
 class MaterialCategoryEnum(str, enum.Enum):

@@ -3,11 +3,11 @@ from sqlalchemy.orm import Session
 from typing import Optional, List
 from uuid import UUID
 
-from app.database import get_db
-from app.models import BOM, Material
-from app.schemas import BOMCreate, BOMResponse, BOMWithProductResponse
-from app.utils.auth import get_current_active_user
-from app.models import User
+from database import get_db
+from models import BOM, Material
+from schemas import BOMCreate, BOMResponse, BOMWithProductResponse
+from utils.auth import get_current_active_user
+from models import User
 
 router = APIRouter(prefix="/boms", tags=["BOM管理"])
 

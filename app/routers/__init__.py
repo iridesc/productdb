@@ -1,4 +1,4 @@
-from app.routers import auth, material, bom, customer, sales_order, production_order, inventory
+from . import auth, material, bom, customer, sales_order, production_order, inventory
 
 routers = [
     auth.router,
