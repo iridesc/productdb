@@ -3,7 +3,9 @@ FROM docker.m.daocloud.io/library/node:18-alpine AS builder
 WORKDIR /app
 
 COPY package.json ./
-RUN npm install
+COPY package-lock.json ./
+# 跳过 npm install，使用宿主机的依赖
+RUN mkdir -p node_modules
 
 COPY . .
 RUN npm run build

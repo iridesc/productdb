@@ -3,8 +3,8 @@ from typing import Optional, List
 from uuid import UUID
 from datetime import datetime, date
 from decimal import Decimal
-from app.models.material import MaterialCategoryEnum
-from app.models.transaction import SalesOrderStatusEnum, ProductionOrderStatusEnum, InventoryTransactionTypeEnum
+from models.material import MaterialCategoryEnum
+from models.transaction import SalesOrderStatusEnum, ProductionOrderStatusEnum, InventoryTransactionTypeEnum
 
 
 # ==================== 基础 Schema ====================
@@ -172,6 +172,7 @@ class SalesOrderItemResponse(SalesOrderItemBase):
     id: UUID
     amount: Decimal
     product: MaterialResponse
+    is_confirmed: bool
     created_at: datetime
 
     class Config:
@@ -179,19 +180,25 @@ class SalesOrderItemResponse(SalesOrderItemBase):
 
 
 class SalesOrderBase(BaseModel):
-    customer_id: UUID
+    customer_id: Optional[UUID] = None
+    customer_name: Optional[str] = None
+    customer_address: Optional[str] = None
+    express_no: Optional[str] = None
     order_date: date
     delivery_date: Optional[date] = None
     remark: Optional[str] = None
 
 
 class SalesOrderCreate(SalesOrderBase):
-    items: List[SalesOrderItemCreate]
+    items: Optional[List[SalesOrderItemCreate]] = None
 
 
 class SalesOrderUpdate(BaseModel):
+    customer_id: Optional[UUID] = None
+    customer_name: Optional[str] = None
+    customer_address: Optional[str] = None
+    express_no: Optional[str] = None
     delivery_date: Optional[date] = None
-    status: Optional[SalesOrderStatusEnum] = None
     remark: Optional[str] = None
 
 
@@ -202,7 +209,7 @@ class SalesOrderResponse(SalesOrderBase):
     total_amount: Decimal
     created_at: datetime
     updated_at: datetime
-    customer: CustomerResponse
+    customer: Optional[CustomerResponse] = None
     items: List[SalesOrderItemResponse] = []
 
     class Config:

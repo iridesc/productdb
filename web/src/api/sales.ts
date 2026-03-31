@@ -25,6 +25,11 @@ export function updateSalesOrder(id: string, data: any) {
   return request.put<SalesOrder>(`/sales-orders/${id}`, data)
 }
 
+// 更新销售订单商品
+export function updateSalesOrderItems(id: string, items: any[]) {
+  return request.put<SalesOrder>(`/sales-orders/${id}/items`, items)
+}
+
 // 发布订单
 export function publishSalesOrder(id: string) {
   return request.put<any>(`/sales-orders/${id}/publish`, {})

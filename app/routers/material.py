@@ -3,14 +3,14 @@ from sqlalchemy.orm import Session
 from typing import Optional, List
 from uuid import UUID
 
-from app.database import get_db
-from app.models import Material, MaterialCategory
-from app.schemas import (
+from database import get_db
+from models import Material, MaterialCategory
+from schemas import (
     MaterialCreate, MaterialUpdate, MaterialResponse, MaterialListResponse,
     MaterialCategoryCreate, MaterialCategoryResponse
 )
-from app.utils.auth import get_current_active_user, get_password_hash
-from app.models import User
+from utils.auth import get_current_active_user, get_password_hash
+from models import User
 
 router = APIRouter(prefix="/materials", tags=["物料管理"])
 

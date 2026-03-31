@@ -7,9 +7,10 @@ export type SalesOrderStatus = 'draft' | 'published' | 'in_progress' | 'complete
 export interface SalesOrder {
   id: ID
   order_no: string
-  customer_name: string
+  customer_id?: ID
+  customer_name?: string
   customer_address?: string
-  express_no: string
+  express_no?: string
   status: SalesOrderStatus
   total_amount: number
   remark?: string
@@ -22,23 +23,32 @@ export interface SalesOrder {
 export interface SalesOrderItem {
   id: ID
   product_id: ID
-  product_name: string
+  product_name?: string
   quantity: number
   unit_price: number
   amount: number
   is_confirmed: boolean
   created_at: DateTime
+  product?: any
 }
 
 // 创建销售订单
 export interface SalesOrderCreate {
-  customer_name: string
+  customer_name?: string
   customer_address?: string
-  express_no: string
+  express_no?: string
   remark?: string
-  items: {
+  items?: {
     product_id: ID
     quantity: number
     unit_price: number
   }[]
+}
+
+// 更新销售订单
+export interface SalesOrderUpdate {
+  customer_name?: string
+  customer_address?: string
+  express_no?: string
+  remark?: string
 }
