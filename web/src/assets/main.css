@@ -75,8 +75,10 @@ html, body {
 }
 
 .status-draft { background: #f0f0f0; color: #666; }
-.status-published { background: #e6f7ff; color: #1890ff; }
-.status-in_progress { background: #fff7e6; color: #fa8c16; }
+.status-pending { background: #f0f0f0; color: #666; }
+.status-confirmed { background: #e6f7ff; color: #1890ff; }
+.status-in_production { background: #fff7e6; color: #fa8c16; }
+.status-shipped { background: #f9f0ff; color: #722ed1; }
 .status-completed { background: #f6ffed; color: #52c41a; }
 .status-cancelled { background: #fff1f0; color: #ff4d4f; }
 
@@ -97,19 +99,3 @@ html, body {
   margin-bottom: 16px;
 }
 
-/* Vant Toast 样式覆盖 */
-.van-toast {
-  color: #fff !important;
-}
-
-.van-toast--fail {
-  background-color: #ff4d4f !important;
-}
-
-.van-toast--success {
-  background-color: #07c160 !important;
-}
-
-.van-toast__text {
-  color: #fff !important;
-}

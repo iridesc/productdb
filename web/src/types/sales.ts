@@ -1,7 +1,7 @@
 import type { ID, DateTime, DateType } from './common'
 
 // 销售订单状态
-export type SalesOrderStatus = 'draft' | 'published' | 'in_progress' | 'completed' | 'cancelled'
+export type SalesOrderStatus = 'draft' | 'pending' | 'completed' | 'cancelled'
 
 // 销售订单
 export interface SalesOrder {
@@ -11,6 +11,7 @@ export interface SalesOrder {
   customer_name?: string
   customer_address?: string
   express_no?: string
+  express_confirmed?: boolean
   status: SalesOrderStatus
   total_amount: number
   remark?: string

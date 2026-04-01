@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { showToast, showConfirmDialog } from 'vant'
+import { showConfirmDialog } from 'vant'
+import { showMessage } from '@/utils/request'
 import { createSalesOrder } from '@/api/sales'
-import { getMaterials } from '@/api/material'
 import { handleError } from '@/utils/request'
+import ProductSelector from '@/components/ProductSelector.vue'
 
 const router = useRouter()
 const loading = ref(false)
@@ -21,24 +22,12 @@ const form = ref({
 
 // 商品选择
 const showProductPicker = ref(false)
-const products = ref<any[]>([])
 const selectedProducts = computed(() => form.value.items)
-
-// 加载商品列表
-async function loadProducts() {
-  try {
-    const res: any = await getMaterials({ page_size: 100 })
-    products.value = res.items.filter((p: any) => p.is_active)
-  } catch (e) {
-    const errorMessage = handleError(e)
-    showToast(errorMessage)
-  }
-}
 
 // 添加商品
 function addProduct(product: any) {
   if (selectedProducts.value.find(p => p.product_id === product.id)) {
-    showToast('已添加该商品')
+    showMessage('已添加该商品')
     return
   }
   form.value.items.push({
@@ -47,7 +36,6 @@ function addProduct(product: any) {
     quantity: 1,
     unit_price: product.price || 0
   })
-  showProductPicker.value = false
 }
 
 // 删除商品
@@ -72,7 +60,7 @@ const totalAmount = computed(() => {
 // 提交
 async function handleSubmit() {
   if (!form.value.customer_address) {
-    showToast('请填写客户地址（必填）')
+    showMessage('请填写客户地址（必填）')
     return
   }
 
@@ -87,17 +75,15 @@ async function handleSubmit() {
       order_date: form.value.order_date
     }
     await createSalesOrder(data)
-    showToast('创建成功')
+    showMessage('创建成功')
     router.back()
   } catch (e) {
     const errorMessage = handleError(e)
-    showToast(errorMessage)
+    showMessage(errorMessage)
   } finally {
     loading.value = false
   }
 }
-
-loadProducts()
 </script>
 
 <template>
@@ -133,8 +119,8 @@ loadProducts()
             <div class="price">¥{{ item.unit_price }}</div>
           </div>
           <div class="product-actions">
-            <van-stepper 
-              v-model="item.quantity" 
+            <van-stepper
+              v-model="item.quantity"
               :min="1"
               @change="(val: number) => updateQuantity(index, val)"
             />
@@ -160,18 +146,11 @@ loadProducts()
       </div>
     </van-form>
 
-    <!-- 商品选择器 -->
-    <van-popup v-model:show="showProductPicker" position="bottom" round>
-      <van-picker
-        title="选择商品"
-        :columns="products.map(p => ({ text: p.name, value: p.id, ...p }))"
-        @confirm="(cols: any) => {
-          const p = products.find(x => x.id === cols[0].value)
-          if (p) addProduct(p)
-        }"
-        @cancel="showProductPicker = false"
-      />
-    </van-popup>
+    <!-- 商品选择器（带搜索） -->
+    <ProductSelector
+      v-model:show="showProductPicker"
+      @select="addProduct"
+    />
   </div>
 </template>
 

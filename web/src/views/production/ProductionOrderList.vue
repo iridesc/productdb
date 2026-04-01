@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { showToast } from 'vant'
+import { showMessage } from '@/utils/request'
 import { getProductionOrders } from '@/api/production'
 import type { ProductionOrder } from '@/types/production'
 import { handleError } from '@/utils/request'
@@ -12,17 +12,15 @@ const list = ref<ProductionOrder[]>([])
 const pagination = ref({ page: 1, page_size: 20, total: 0 })
 
 const statusMap: Record<string, string> = {
-  draft: '草稿',
-  published: '已发布',
-  in_progress: '进行中',
+  pending: '待生产',
+  in_production: '生产中',
   completed: '已完成',
   cancelled: '已取消'
 }
 
 const statusColor: Record<string, string> = {
-  draft: '#999',
-  published: '#1989fa',
-  in_progress: '#fa8c16',
+  pending: '#999',
+  in_production: '#fa8c16',
   completed: '#52c41a',
   cancelled: '#ff4d4f'
 }
@@ -38,7 +36,7 @@ async function fetchList() {
     pagination.value.total = res.total
   } catch (e) {
     const errorMessage = handleError(e)
-    showToast(errorMessage)
+    showMessage(errorMessage)
   } finally {
     loading.value = false
   }
@@ -65,33 +63,39 @@ onMounted(() => {
       </template>
     </van-nav-bar>
 
-    <div class="list-container">
+    <div class="table-container">
       <van-pull-refresh v-model="loading" @refresh="fetchList">
-        <div v-for="item in list" :key="item.id" class="list-item" @click="goDetail(item.id)">
-          <div class="item-header">
-            <span class="order-no">{{ item.order_no }}</span>
-            <span class="status-tag"
-              :style="{ background: statusColor[item.status] + '20', color: statusColor[item.status] }">
-              {{ statusMap[item.status] }}
-            </span>
-          </div>
-          <div class="item-body">
-            <div class="item-row">
-              <span class="label">产品</span>
-              <span class="value">{{ item.product_name }}</span>
-            </div>
-            <div class="item-row">
-              <span class="label">数量</span>
-              <span class="value">{{ item.quantity }}</span>
-            </div>
-          </div>
-          <div class="item-footer">
-            <span class="item-count">{{ item.items?.length || 0 }} 种物料</span>
-            <span class="item-time">{{ item.created_at?.slice(0, 10) }}</span>
-          </div>
-        </div>
+        <div class="table-wrapper">
+          <table class="order-table">
+            <thead>
+              <tr>
+                <th>订单号</th>
+                <th>状态</th>
+                <th>产品名称</th>
+                <th>数量</th>
+                <th>物料种类</th>
+                <th>创建时间</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="item in list" :key="item.id" @click="goDetail(item.id)">
+                <td class="order-no-cell">{{ item.order_no }}</td>
+                <td>
+                  <span class="status-tag"
+                    :style="{ background: statusColor[item.status] + '20', color: statusColor[item.status] }">
+                    {{ statusMap[item.status] }}
+                  </span>
+                </td>
+                <td>{{ item.product_name }}</td>
+                <td class="center-cell">{{ item.quantity }}</td>
+                <td class="center-cell">{{ item.items?.length || 0 }} 种</td>
+                <td>{{ item.created_at?.slice(0, 10) }}</td>
+              </tr>
+            </tbody>
+          </table>
 
-        <van-empty v-if="!loading && list.length === 0" description="暂无订单" />
+          <van-empty v-if="!loading && list.length === 0" description="暂无订单" />
+        </div>
       </van-pull-refresh>
     </div>
   </div>
@@ -103,62 +107,69 @@ onMounted(() => {
   background: #f5f5f5;
 }
 
-.list-container {
+.table-container {
   padding: 16px;
 }
 
-.list-item {
+.table-wrapper {
   background: #fff;
   border-radius: 8px;
-  padding: 16px;
-  margin-bottom: 12px;
+  overflow-x: auto;
 }
 
-.item-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
+.order-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  white-space: nowrap;
 }
 
-.order-no {
-  font-size: 15px;
+.order-table thead {
+  background: #fafafa;
+}
+
+.order-table th {
+  padding: 12px 10px;
+  text-align: left;
   font-weight: 600;
+  color: #666;
+  border-bottom: 2px solid #eee;
+  font-size: 13px;
+}
+
+.order-table td {
+  padding: 14px 10px;
+  border-bottom: 1px solid #f5f5f5;
   color: #333;
+  vertical-align: middle;
+}
+
+.order-table tbody tr {
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.order-table tbody tr:hover {
+  background: #f8f9ff;
+}
+
+.order-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.order-no-cell {
+  font-weight: 600;
+  color: #1989fa;
+}
+
+.center-cell {
+  text-align: center;
 }
 
 .status-tag {
+  display: inline-block;
   font-size: 12px;
-  padding: 2px 10px;
+  padding: 3px 10px;
   border-radius: 4px;
-}
-
-.item-body {
-  margin-bottom: 12px;
-}
-
-.item-row {
-  display: flex;
-  justify-content: space-between;
-  padding: 4px 0;
-}
-
-.label {
-  color: #999;
-  font-size: 13px;
-}
-
-.value {
-  color: #333;
-  font-size: 13px;
-}
-
-.item-footer {
-  display: flex;
-  justify-content: space-between;
-  padding-top: 12px;
-  border-top: 1px solid #f5f5f5;
-  font-size: 12px;
-  color: #999;
 }
 </style>

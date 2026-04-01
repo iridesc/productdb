@@ -22,6 +22,7 @@ export interface Material {
   is_active: boolean
   tags?: Tag[]
   images?: MaterialImage[]
+  thumbnail_url?: string
   created_at: DateTime
   updated_at: DateTime
 }

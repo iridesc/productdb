@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { showToast } from 'vant'
+import { showMessage } from '@/utils/request'
 import request from '@/utils/request'
 import { handleError } from '@/utils/request'
 
@@ -34,7 +34,7 @@ async function fetchList() {
     pagination.value.total = res.total
   } catch (e) {
     const errorMessage = handleError(e)
-    showToast(errorMessage)
+    showMessage(errorMessage)
   } finally {
     loading.value = false
   }

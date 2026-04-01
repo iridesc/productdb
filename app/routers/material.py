@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from typing import Optional, List
 from uuid import UUID
 from decimal import Decimal
 
 from app.database import get_db
-from app.models import Material, MaterialCategory, User, BOM
+from app.models import Material, MaterialCategory, MaterialImage, User, BOM
 from app.schemas import (
     MaterialCreate,
     MaterialUpdate,
@@ -71,7 +71,7 @@ def get_materials(
     current_user: User = Depends(get_current_active_user),
 ):
     """获取物料列表"""
-    query = db.query(Material)
+    query = db.query(Material).options(selectinload(Material.images))
 
     if category:
         query = query.filter(Material.category == category)

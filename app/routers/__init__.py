@@ -1,4 +1,4 @@
-from . import auth, material, bom, customer, sales_order, production_order, inventory
+from . import auth, material, bom, customer, sales_order, production_order, inventory, image
 
 routers = [
     auth.router,
@@ -9,6 +9,7 @@ routers = [
     sales_order.router,
     production_order.router,
     inventory.router,
+    image.router,
 ]
 
 __all__ = ["routers"]

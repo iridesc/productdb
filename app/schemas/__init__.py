@@ -78,6 +78,7 @@ class MaterialResponse(MaterialBase):
     category_info: Optional[MaterialCategoryResponse] = None
     bom_cost: Optional[Decimal] = Field(default=Decimal("0"))
     total_cost: Optional[Decimal] = Field(default=Decimal("0"))
+    thumbnail_url: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -208,6 +209,7 @@ class SalesOrderBase(BaseModel):
     customer_name: Optional[str] = None
     customer_address: Optional[str] = None
     express_no: Optional[str] = None
+    express_confirmed: Optional[bool] = None
     order_date: date
     delivery_date: Optional[date] = None
     remark: Optional[str] = None

@@ -43,9 +43,7 @@ class Customer(Base):
 
 class SalesOrderStatusEnum(str, enum.Enum):
     DRAFT = "draft"  # 草稿
-    CONFIRMED = "confirmed"  # 已确认
-    IN_PRODUCTION = "in_production"  # 生产中
-    SHIPPED = "shipped"  # 已发货
+    PENDING = "pending"  # 待处理
     COMPLETED = "completed"  # 已完成
     CANCELLED = "cancelled"  # 已取消
 
@@ -59,6 +57,7 @@ class SalesOrder(Base):
     customer_name = Column(String(100), nullable=True)
     customer_address = Column(String(200), nullable=True)
     express_no = Column(String(50), nullable=True)
+    express_confirmed = Column(Boolean, default=False)
     order_date = Column(Date, nullable=False)
     delivery_date = Column(Date, nullable=True)
     status = Column(Enum(SalesOrderStatusEnum), default=SalesOrderStatusEnum.DRAFT)
