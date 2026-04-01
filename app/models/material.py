@@ -1,10 +1,19 @@
-from sqlalchemy import Column, String, Text, Boolean, DateTime, Numeric, Enum, ForeignKey
+from sqlalchemy import (
+    Column,
+    String,
+    Text,
+    Boolean,
+    DateTime,
+    Numeric,
+    Enum,
+    ForeignKey,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import uuid
 import enum
-from database import Base
+from app.database import Base
 
 
 class MaterialCategoryEnum(str, enum.Enum):
@@ -20,7 +29,9 @@ class MaterialCategory(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String(50), nullable=False)
     code = Column(String(20), unique=True, nullable=False)
-    parent_id = Column(UUID(as_uuid=True), ForeignKey("material_categories.id"), nullable=True)
+    parent_id = Column(
+        UUID(as_uuid=True), ForeignKey("material_categories.id"), nullable=True
+    )
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -39,12 +50,20 @@ class Material(Base):
     safety_stock = Column(Numeric(10, 2), default=0)
     current_stock = Column(Numeric(10, 2), default=0)
     price = Column(Numeric(10, 2), default=0)
+    sale_price = Column(Numeric(10, 2), default=0)
+    other_cost = Column(Numeric(10, 2), default=0)
     description = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True)
-    category_id = Column(UUID(as_uuid=True), ForeignKey("material_categories.id"), nullable=True)
+    category_id = Column(
+        UUID(as_uuid=True), ForeignKey("material_categories.id"), nullable=True
+    )
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     category_info = relationship("MaterialCategory", backref="materials")
-    bom_items = relationship("BOM", back_populates="material", foreign_keys="BOM.material_id")
-    product_boms = relationship("BOM", back_populates="product", foreign_keys="BOM.product_id")
+    bom_items = relationship(
+        "BOM", back_populates="material", foreign_keys="BOM.material_id"
+    )
+    product_boms = relationship(
+        "BOM", back_populates="product", foreign_keys="BOM.product_id"
+    )

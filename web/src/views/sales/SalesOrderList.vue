@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { showToast } from 'vant'
 import { getSalesOrders } from '@/api/sales'
 import type { SalesOrder } from '@/types/sales'
+import { handleError } from '@/utils/request'
 
 const router = useRouter()
 const loading = ref(false)
@@ -35,8 +36,9 @@ async function fetchList() {
     })
     list.value = res.items
     pagination.value.total = res.total
-  } catch (e: any) {
-    showToast(e.message || '加载失败')
+  } catch (e) {
+    const errorMessage = handleError(e)
+    showToast(errorMessage)
   } finally {
     loading.value = false
   }
@@ -57,22 +59,19 @@ onMounted(() => {
 
 <template>
   <div class="sales-page">
-    <van-nav-bar title="销售订单" left-arrow @click-left="router.back()" />
+    <van-nav-bar title="销售订单" left-arrow @click-left="router.back()">
+      <template #right>
+        <van-icon name="plus" size="18" @click="goCreate" />
+      </template>
+    </van-nav-bar>
 
     <div class="list-container">
       <van-pull-refresh v-model="loading" @refresh="fetchList">
-        <div 
-          v-for="item in list" 
-          :key="item.id" 
-          class="list-item"
-          @click="goDetail(item.id)"
-        >
+        <div v-for="item in list" :key="item.id" class="list-item" @click="goDetail(item.id)">
           <div class="item-header">
             <span class="order-no">{{ item.order_no }}</span>
-            <span 
-              class="status-tag" 
-              :style="{ background: statusColor[item.status] + '20', color: statusColor[item.status] }"
-            >
+            <span class="status-tag"
+              :style="{ background: statusColor[item.status] + '20', color: statusColor[item.status] }">
               {{ statusMap[item.status] }}
             </span>
           </div>
@@ -99,16 +98,6 @@ onMounted(() => {
         <van-empty v-if="!loading && list.length === 0" description="暂无订单" />
       </van-pull-refresh>
     </div>
-
-    <van-button
-      type="primary"
-      size="large"
-      block
-      class="add-btn"
-      @click="goCreate"
-    >
-      新建订单
-    </van-button>
   </div>
 </template>
 
@@ -116,7 +105,6 @@ onMounted(() => {
 .sales-page {
   min-height: 100vh;
   background: #f5f5f5;
-  padding-bottom: 70px;
 }
 
 .list-container {
@@ -181,13 +169,5 @@ onMounted(() => {
   border-top: 1px solid #f5f5f5;
   font-size: 12px;
   color: #999;
-}
-
-.add-btn {
-  position: fixed;
-  bottom: 20px;
-  left: 16px;
-  right: 16px;
-  z-index: 100;
 }
 </style>

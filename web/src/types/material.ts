@@ -14,6 +14,10 @@ export interface Material {
   safety_stock: number
   current_stock: number
   price: number
+  sale_price: number
+  other_cost: number
+  bom_cost: number
+  total_cost: number
   description?: string
   is_active: boolean
   tags?: Tag[]
@@ -27,18 +31,23 @@ export interface MaterialCreate {
   name: string
   category: MaterialCategory
   unit: string
-  specification?: string
   safety_stock?: number
   price?: number
+  sale_price?: number
+  other_cost?: number
   description?: string
 }
 
 export interface MaterialUpdate {
   name?: string
+  category?: MaterialCategory
   unit?: string
   specification?: string
   safety_stock?: number
+  current_stock?: number
   price?: number
+  sale_price?: number
+  other_cost?: number
   description?: string
   is_active?: boolean
 }

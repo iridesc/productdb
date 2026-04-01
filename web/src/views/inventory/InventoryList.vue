@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { showToast } from 'vant'
 import request from '@/utils/request'
+import { handleError } from '@/utils/request'
 
 const router = useRouter()
 const loading = ref(false)
@@ -31,8 +32,9 @@ async function fetchList() {
     const res: any = await request.get('/inventory', { params })
     list.value = res.items
     pagination.value.total = res.total
-  } catch (e: any) {
-    showToast(e.message || '加载失败')
+  } catch (e) {
+    const errorMessage = handleError(e)
+    showToast(errorMessage)
   } finally {
     loading.value = false
   }

@@ -10,6 +10,7 @@ import {
   cancelProductionOrder
 } from '@/api/production'
 import type { ProductionOrder } from '@/types/production'
+import { handleError } from '@/utils/request'
 
 const route = useRoute()
 const router = useRouter()
@@ -30,8 +31,9 @@ async function fetchDetail() {
   loading.value = true
   try {
     detail.value = await getProductionOrder(id) as any
-  } catch (e: any) {
-    showToast(e.message || '加载失败')
+  } catch (e) {
+    const errorMessage = handleError(e)
+    showToast(errorMessage)
   } finally {
     loading.value = false
   }
@@ -45,8 +47,9 @@ async function handlePublish() {
     await publishProductionOrder(id)
     showToast('发布成功')
     fetchDetail()
-  } catch (e: any) {
-    showToast(e.message || '发布失败')
+  } catch (e) {
+    const errorMessage = handleError(e)
+    showToast(errorMessage)
   } finally {
     actionLoading.value = ''
   }
@@ -59,8 +62,9 @@ async function handleDistribute(itemId: string) {
     await distributeProductionItem(id, itemId)
     showToast('库存已分配')
     fetchDetail()
-  } catch (e: any) {
-    showToast(e.message || '分配失败')
+  } catch (e) {
+    const errorMessage = handleError(e)
+    showToast(errorMessage)
   } finally {
     actionLoading.value = ''
   }
@@ -74,8 +78,9 @@ async function handleComplete() {
     await completeProductionOrder(id)
     showToast('生产完成，成品已入库')
     fetchDetail()
-  } catch (e: any) {
-    showToast(e.message || '操作失败')
+  } catch (e) {
+    const errorMessage = handleError(e)
+    showToast(errorMessage)
   } finally {
     actionLoading.value = ''
   }
@@ -89,8 +94,9 @@ async function handleCancel() {
     await cancelProductionOrder(id)
     showToast('已取消')
     fetchDetail()
-  } catch (e: any) {
-    showToast(e.message || '取消失败')
+  } catch (e) {
+    const errorMessage = handleError(e)
+    showToast(errorMessage)
   } finally {
     actionLoading.value = ''
   }

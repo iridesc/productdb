@@ -1,5 +1,5 @@
-from models.material import Material, MaterialCategory, MaterialCategoryEnum
-from models.transaction import (
+from .material import Material, MaterialCategory, MaterialCategoryEnum
+from .transaction import (
     BOM, Customer, SalesOrder, SalesOrderItem, SalesOrderStatusEnum,
     ProductionOrder, ProductionOrderItem, ProductionOrderStatusEnum,
     InventoryTransaction, InventoryTransactionTypeEnum, User

@@ -96,3 +96,20 @@ html, body {
   font-size: 48px;
   margin-bottom: 16px;
 }
+
+/* Vant Toast 样式覆盖 */
+.van-toast {
+  color: #fff !important;
+}
+
+.van-toast--fail {
+  background-color: #ff4d4f !important;
+}
+
+.van-toast--success {
+  background-color: #07c160 !important;
+}
+
+.van-toast__text {
+  color: #fff !important;
+}

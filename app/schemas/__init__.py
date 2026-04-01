@@ -3,11 +3,16 @@ from typing import Optional, List
 from uuid import UUID
 from datetime import datetime, date
 from decimal import Decimal
-from models.material import MaterialCategoryEnum
-from models.transaction import SalesOrderStatusEnum, ProductionOrderStatusEnum, InventoryTransactionTypeEnum
+from app.models.material import MaterialCategoryEnum
+from app.models.transaction import (
+    SalesOrderStatusEnum,
+    ProductionOrderStatusEnum,
+    InventoryTransactionTypeEnum,
+)
 
 
 # ==================== 基础 Schema ====================
+
 
 class MaterialCategoryBase(BaseModel):
     name: str = Field(..., max_length=50)
@@ -30,15 +35,18 @@ class MaterialCategoryResponse(MaterialCategoryBase):
 
 # ==================== 物料 Schema ====================
 
+
 class MaterialBase(BaseModel):
     code: str = Field(..., max_length=50)
     name: str = Field(..., max_length=100)
     category: MaterialCategoryEnum
     unit: str = Field(default="个", max_length=20)
     specification: Optional[str] = Field(None, max_length=200)
-    safety_stock: Decimal = Field(default=0, max_digits=10, decimal_places=2)
-    current_stock: Decimal = Field(default=0, max_digits=10, decimal_places=2)
-    price: Decimal = Field(default=0, max_digits=10, decimal_places=2)
+    safety_stock: Decimal = Field(default=Decimal("0"))
+    current_stock: Decimal = Field(default=Decimal("0"))
+    price: Decimal = Field(default=Decimal("0"))
+    sale_price: Decimal = Field(default=Decimal("0"))
+    other_cost: Decimal = Field(default=Decimal("0"))
     description: Optional[str] = None
     is_active: bool = True
     category_id: Optional[UUID] = None
@@ -50,10 +58,14 @@ class MaterialCreate(MaterialBase):
 
 class MaterialUpdate(BaseModel):
     name: Optional[str] = None
+    category: Optional[MaterialCategoryEnum] = None
     unit: Optional[str] = None
     specification: Optional[str] = None
     safety_stock: Optional[Decimal] = None
+    current_stock: Optional[Decimal] = None
     price: Optional[Decimal] = None
+    sale_price: Optional[Decimal] = None
+    other_cost: Optional[Decimal] = None
     description: Optional[str] = None
     is_active: Optional[bool] = None
     category_id: Optional[UUID] = None
@@ -64,6 +76,8 @@ class MaterialResponse(MaterialBase):
     created_at: datetime
     updated_at: datetime
     category_info: Optional[MaterialCategoryResponse] = None
+    bom_cost: Optional[Decimal] = Field(default=Decimal("0"))
+    total_cost: Optional[Decimal] = Field(default=Decimal("0"))
 
     class Config:
         from_attributes = True
@@ -76,17 +90,25 @@ class MaterialListResponse(BaseModel):
 
 # ==================== BOM Schema ====================
 
+
 class BOMBase(BaseModel):
     product_id: UUID
     material_id: UUID
-    quantity: Decimal = Field(..., max_digits=10, decimal_places=4)
-    scrap_rate: Decimal = Field(default=0, max_digits=5, decimal_places=2)
+    quantity: Decimal = Field(...)
+    scrap_rate: Decimal = Field(default=Decimal("0"))
     is_optional: bool = False
     note: Optional[str] = Field(None, max_length=200)
 
 
 class BOMCreate(BOMBase):
     pass
+
+
+class BOMUpdate(BaseModel):
+    quantity: Optional[Decimal] = None
+    scrap_rate: Optional[Decimal] = None
+    is_optional: Optional[bool] = None
+    note: Optional[str] = None
 
 
 class BOMResponse(BOMBase):
@@ -118,6 +140,7 @@ class BOMWithProductResponse(BaseModel):
 
 
 # ==================== 客户 Schema ====================
+
 
 class CustomerBase(BaseModel):
     name: str = Field(..., max_length=100)
@@ -158,10 +181,11 @@ class CustomerListResponse(BaseModel):
 
 # ==================== 销售订单 Schema ====================
 
+
 class SalesOrderItemBase(BaseModel):
     product_id: UUID
-    quantity: Decimal = Field(..., max_digits=10, decimal_places=2)
-    unit_price: Decimal = Field(..., max_digits=10, decimal_places=2)
+    quantity: Decimal = Field(...)
+    unit_price: Decimal = Field(...)
 
 
 class SalesOrderItemCreate(SalesOrderItemBase):
@@ -223,9 +247,10 @@ class SalesOrderListResponse(BaseModel):
 
 # ==================== 生产订单 Schema ====================
 
+
 class ProductionOrderItemBase(BaseModel):
     material_id: UUID
-    quantity: Decimal = Field(..., max_digits=10, decimal_places=2)
+    quantity: Decimal = Field(...)
 
 
 class ProductionOrderItemCreate(ProductionOrderItemBase):
@@ -245,7 +270,7 @@ class ProductionOrderItemResponse(ProductionOrderItemBase):
 class ProductionOrderBase(BaseModel):
     sales_order_id: Optional[UUID] = None
     product_id: UUID
-    quantity: Decimal = Field(..., max_digits=10, decimal_places=2)
+    quantity: Decimal = Field(...)
     start_date: Optional[date] = None
     end_date: Optional[date] = None
     remark: Optional[str] = None
@@ -283,6 +308,7 @@ class ProductionOrderListResponse(BaseModel):
 
 
 # ==================== 库存 Schema ====================
+
 
 class InventoryTransactionBase(BaseModel):
     material_id: UUID
@@ -329,6 +355,7 @@ class InventoryListResponse(BaseModel):
 
 # ==================== 用户 Schema ====================
 
+
 class UserBase(BaseModel):
     username: str = Field(..., max_length=50)
     email: str = Field(..., max_length=100)
@@ -350,6 +377,7 @@ class UserResponse(UserBase):
 
 
 # ==================== 认证 Schema ====================
+
 
 class Token(BaseModel):
     access_token: str

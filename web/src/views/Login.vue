@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { showToast, showLoadingToast, closeToast } from 'vant'
 import { useUserStore } from '@/store/user'
 import request from '@/utils/request'
+import { handleError } from '@/utils/request'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -29,8 +30,9 @@ async function handleLogin() {
     userStore.setToken(res.access_token)
     showToast('登录成功')
     router.replace('/dashboard')
-  } catch (e: any) {
-    showToast(e.message || '登录失败')
+  } catch (e) {
+    const errorMessage = handleError(e)
+    showToast(errorMessage)
   } finally {
     loading.value = false
   }
