@@ -6,6 +6,7 @@ export function getProductionOrders(params: {
   page?: number
   page_size?: number
   status?: string
+  product_id?: string
 }) {
   return request.get<{ total: number; items: ProductionOrder[] }>('/production-orders', { params })
 }

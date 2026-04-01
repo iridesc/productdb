@@ -1,7 +1,7 @@
 import type { ID, DateTime } from './common'
 
 // 生产订单状态
-export type ProductionOrderStatus = 'draft' | 'published' | 'in_progress' | 'completed' | 'cancelled'
+export type ProductionOrderStatus = 'pending' | 'in_production' | 'completed' | 'cancelled'
 
 // 生产订单
 export interface ProductionOrder {

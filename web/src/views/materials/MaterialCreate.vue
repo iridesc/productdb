@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { showToast, showLoadingToast } from 'vant'
+import { showMessage } from '@/utils/request'
 import { createMaterial } from '@/api/material'
 
 const router = useRouter()
@@ -53,14 +53,14 @@ function onUnitConfirm(value: any) {
 
 async function handleSubmit() {
   if (!form.value.code || !form.value.name) {
-    showToast('请填写必填项')
+    showMessage('请填写必填项')
     return
   }
 
   loading.value = true
   try {
     await createMaterial(form.value as any)
-    showToast('创建成功')
+    showMessage('创建成功')
     router.back()
   } catch (e: any) {
   } finally {

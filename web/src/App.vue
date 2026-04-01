@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { showToast } from 'vant'
+import { showMessage } from '@/utils/request'
 import { useUserStore } from '@/store/user'
 
 const router = useRouter()

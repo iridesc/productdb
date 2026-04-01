@@ -3,8 +3,6 @@ from sqlalchemy.orm import Session
 from typing import Optional, List
 from uuid import UUID
 from datetime import date
-import random
-import string
 
 from app.database import get_db
 from app.models import (
@@ -20,11 +18,11 @@ from app.utils.auth import get_current_active_user
 router = APIRouter(prefix="/production-orders", tags=["生产订单"])
 
 
-def generate_production_no() -> str:
+def generate_production_no(db: Session) -> str:
     """生成生产单号"""
-    today = date.today().strftime("%Y%m%d")
-    random_str = ''.join(random.choices(string.digits, k=4))
-    return f"PO{today}{random_str}"
+    total_order_count = db.query(ProductionOrder).count() + 1
+
+    return f"P-{total_order_count:03d}"
 
 
 @router.get("", response_model=ProductionOrderListResponse)
@@ -83,7 +81,7 @@ def create_production_order(
             )
     
     # 生成生产单号
-    order_no = generate_production_no()
+    order_no = generate_production_no(db)
     
     # 创建生产订单
     db_order = ProductionOrder(

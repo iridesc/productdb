@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { showToast, showLoadingToast, Empty } from 'vant'
+import { Empty } from 'vant'
+import { showMessage } from '@/utils/request'
 import { getMaterials, deleteMaterial } from '@/api/material'
 import type { Material } from '@/types/material'
 import { handleError } from '@/utils/request'
@@ -18,6 +19,13 @@ const statusMap: Record<string, string> = {
   semi_finished: '半成品',
   raw_material: '原材料',
   auxiliary: '辅料'
+}
+
+const categoryColor: Record<string, string> = {
+  finished_product: '#52c41a',
+  semi_finished: '#fa8c16',
+  raw_material: '#1890ff',
+  auxiliary: '#722ed1'
 }
 
 const categoryOptions = [
@@ -41,14 +49,13 @@ async function fetchList() {
     pagination.value.total = res.total
   } catch (e) {
     const errorMessage = handleError(e)
-    showToast(errorMessage)
+    showMessage(errorMessage)
   } finally {
     loading.value = false
   }
 }
 
 function openCategoryFilter() {
-  // 使用原生的prompt作为临时解决方案
   const categories = categoryOptions.map((opt, index) => `${index + 1}. ${opt.text}`).join('\n')
   const input = prompt(`请选择分类:\n${categories}\n\n请输入编号:`, '1')
   
@@ -112,37 +119,54 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- 列表 -->
-    <div class="list-container">
+    <!-- 表格 -->
+    <div class="table-container">
       <van-pull-refresh v-model="loading" @refresh="fetchList">
-        <van-list
-          :loading="loading"
-          :finished="!loading && list.length >= pagination.total"
-          @load="fetchList"
-        >
-          <div 
-            v-for="item in list" 
-            :key="item.id" 
-            class="list-item"
-            @click="goDetail(item.id)"
-          >
-            <div class="item-info">
-              <div class="item-name">{{ item.name }}</div>
-              <div class="item-meta">
-                <span class="item-code">{{ item.code }}</span>
-                <span class="item-category">{{ statusMap[item.category] || item.category }}</span>
-              </div>
-            </div>
-            <div class="item-stock">
-              <div class="stock-num" :class="{ 'low-stock': item.current_stock < item.safety_stock }">
-                {{ item.current_stock }} {{ item.unit }}
-              </div>
-              <div class="stock-label">库存</div>
-            </div>
-          </div>
+        <div class="table-wrapper">
+          <table class="material-table">
+            <thead>
+              <tr>
+                <th class="thumb-cell">图片</th>
+                <th>物料名称</th>
+                <th>物料编码</th>
+                <th>分类</th>
+                <th>当前库存</th>
+                <th>安全库存</th>
+                <th>单位</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="item in list" :key="item.id" @click="goDetail(item.id)">
+                <td class="thumb-cell">
+                  <img
+                    v-if="item.thumbnail_url"
+                    class="material-thumb"
+                    :src="item.thumbnail_url"
+                    :alt="item.name"
+                  />
+                  <div v-else class="material-thumb material-thumb-placeholder">
+                    <van-icon name="photo-o" size="16" />
+                  </div>
+                </td>
+                <td class="name-cell">{{ item.name }}</td>
+                <td class="code-cell">{{ item.code }}</td>
+                <td>
+                  <span class="category-tag"
+                    :style="{ background: categoryColor[item.category] + '20', color: categoryColor[item.category] }">
+                    {{ statusMap[item.category] || item.category }}
+                  </span>
+                </td>
+                <td :class="{ 'low-stock': item.current_stock < item.safety_stock }">
+                  {{ item.current_stock }}
+                </td>
+                <td>{{ item.safety_stock }}</td>
+                <td class="center-cell">{{ item.unit }}</td>
+              </tr>
+            </tbody>
+          </table>
 
           <van-empty v-if="!loading && list.length === 0" description="暂无物料" />
-        </van-list>
+        </div>
       </van-pull-refresh>
     </div>
   </div>
@@ -164,68 +188,101 @@ onMounted(() => {
   align-items: center;
 }
 
-.list-container {
-  padding: 0 16px;
+.table-container {
+  padding: 16px;
 }
 
-.list-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+.table-wrapper {
   background: #fff;
   border-radius: 8px;
-  padding: 16px;
-  margin-bottom: 12px;
+  overflow-x: auto;
 }
 
-.item-info {
-  flex: 1;
+.material-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  white-space: nowrap;
 }
 
-.item-name {
-  font-size: 16px;
-  font-weight: 500;
+.material-table thead {
+  background: #fafafa;
+}
+
+.material-table th {
+  padding: 12px 10px;
+  text-align: left;
+  font-weight: 600;
+  color: #666;
+  border-bottom: 2px solid #eee;
+  font-size: 13px;
+}
+
+.material-table td {
+  padding: 14px 10px;
+  border-bottom: 1px solid #f5f5f5;
   color: #333;
-  margin-bottom: 6px;
+  vertical-align: middle;
 }
 
-.item-meta {
+.material-table tbody tr {
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.material-table tbody tr:hover {
+  background: #f8f9ff;
+}
+
+.material-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.thumb-cell {
+  width: 56px;
+  text-align: center;
+}
+
+.material-thumb {
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  object-fit: cover;
+  display: block;
+  margin: 0 auto;
+  background: #f5f5f5;
+}
+
+.material-thumb-placeholder {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: center;
+  color: #ccc;
 }
 
-.item-code {
-  font-size: 12px;
-  color: #999;
-}
-
-.item-category {
-  font-size: 12px;
-  color: #1989fa;
-  background: #e6f7ff;
-  padding: 2px 8px;
-  border-radius: 4px;
-}
-
-.item-stock {
-  text-align: right;
-}
-
-.stock-num {
-  font-size: 18px;
+.name-cell {
   font-weight: 600;
   color: #333;
 }
 
-.stock-num.low-stock {
-  color: #ff4d4f;
-}
-
-.stock-label {
-  font-size: 12px;
+.code-cell {
   color: #999;
+  font-family: monospace;
 }
 
+.low-stock {
+  color: #ff4d4f;
+  font-weight: 600;
+}
 
+.center-cell {
+  text-align: center;
+}
+
+.category-tag {
+  display: inline-block;
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 4px;
+}
 </style>

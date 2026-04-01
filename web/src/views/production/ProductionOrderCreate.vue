@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { showToast } from 'vant'
+import { showMessage } from '@/utils/request'
 import { createProductionOrder } from '@/api/production'
-import { getMaterials } from '@/api/material'
 import { handleError } from '@/utils/request'
+import ProductSelector from '@/components/ProductSelector.vue'
 
 const router = useRouter()
 const loading = ref(false)
@@ -16,50 +16,37 @@ const form = ref({
   remark: ''
 })
 
-const products = ref<any[]>([])
-const showPicker = ref(false)
+const showProductPicker = ref(false)
 
-async function loadProducts() {
-  try {
-    const res: any = await getMaterials({ page_size: 100 })
-    products.value = res.items.filter((p: any) => p.is_active && p.category === 'finished_product')
-  } catch (e) {
-    const errorMessage = handleError(e)
-    showToast(errorMessage)
-  }
-}
-
-function onConfirm({ selectedOptions }: any) {
-  const product = selectedOptions[0]
+function selectProduct(product: any) {
   form.value.product_id = product.id
   form.value.product_name = product.name
-  showPicker.value = false
 }
+
+const finishedProductFilter = (item: any) => item.category === 'finished_product'
 
 async function handleSubmit() {
   if (!form.value.product_id) {
-    showToast('请选择产品')
+    showMessage('请选择产品')
     return
   }
   if (!form.value.quantity || form.value.quantity <= 0) {
-    showToast('请填写生产数量')
+    showMessage('请填写生产数量')
     return
   }
 
   loading.value = true
   try {
     await createProductionOrder(form.value as any)
-    showToast('创建成功')
+    showMessage('创建成功')
     router.back()
   } catch (e) {
     const errorMessage = handleError(e)
-    showToast(errorMessage)
+    showMessage(errorMessage)
   } finally {
     loading.value = false
   }
 }
-
-loadProducts()
 </script>
 
 <template>
@@ -74,7 +61,7 @@ loadProducts()
           clickable
           label="产品"
           placeholder="请选择产品"
-          @click="showPicker = true"
+          @click="showProductPicker = true"
         />
         <van-field
           v-model.number="form.quantity"
@@ -98,14 +85,12 @@ loadProducts()
       </div>
     </van-form>
 
-    <van-popup v-model:show="showPicker" position="bottom" round>
-      <van-picker
-        title="选择产品"
-        :columns="products.map(p => ({ text: p.name, value: p.id }))"
-        @confirm="onConfirm"
-        @cancel="showPicker = false"
-      />
-    </van-popup>
+    <!-- 产品选择器（带搜索） -->
+    <ProductSelector
+      v-model="showProductPicker"
+      :filter="finishedProductFilter"
+      @select="selectProduct"
+    />
   </div>
 </template>
 

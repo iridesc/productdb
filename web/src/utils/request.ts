@@ -55,6 +55,14 @@ export function handleError(error: any): string {
   return errorMessage
 }
 
+export function showMessage(message: string) {
+  showDialog({
+    title: '提示',
+    message: message,
+    confirmButtonText: '确定'
+  })
+}
+
 function showError(message: string) {
   showDialog({
     title: '错误',

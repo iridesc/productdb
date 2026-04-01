@@ -1,4 +1,4 @@
-from .material import Material, MaterialCategory, MaterialCategoryEnum
+from .material import Material, MaterialCategory, MaterialCategoryEnum, MaterialImage
 from .transaction import (
     BOM, Customer, SalesOrder, SalesOrderItem, SalesOrderStatusEnum,
     ProductionOrder, ProductionOrderItem, ProductionOrderStatusEnum,
@@ -9,6 +9,7 @@ __all__ = [
     "Material",
     "MaterialCategory", 
     "MaterialCategoryEnum",
+    "MaterialImage",
     "BOM",
     "Customer",
     "SalesOrder",

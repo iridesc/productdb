@@ -1,10 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from typing import Optional, List
 from uuid import UUID
 from datetime import date, datetime
-import random
-import string
 
 from app.database import get_db
 from app.models import (
@@ -13,6 +11,8 @@ from app.models import (
     SalesOrderStatusEnum,
     Customer,
     Material,
+    InventoryTransaction,
+    InventoryTransactionTypeEnum,
     User,
 )
 from app.schemas import (
@@ -30,20 +30,8 @@ router = APIRouter(prefix="/sales-orders", tags=["销售订单"])
 
 def generate_order_no(db: Session) -> str:
     """生成订单号"""
-    today = date.today()
-    year_prefix = today.strftime("%Y")[:2]  # 年份前两位
-    date_str = today.strftime("%m%d")  # 月日
-
-    # 计算当天订单数量
-    from datetime import datetime
-
-    today_start = datetime.combine(today, datetime.min.time())
-    today_order_count = (
-        db.query(SalesOrder).filter(SalesOrder.created_at >= today_start).count() + 1
-    )  # 加1是因为当前订单还未创建
-
-    # 生成订单号：SO-年份前两位-月日-当天序号
-    return f"SO-{year_prefix}-{date_str}-{today_order_count:03d}"
+    total_order_count = db.query(SalesOrder).count() + 1
+    return f"S-{total_order_count:03d}"
 
 
 @router.get("", response_model=SalesOrderListResponse)
@@ -87,7 +75,6 @@ def create_sales_order(
     current_user: User = Depends(get_current_active_user),
 ):
     """创建销售订单（草稿状态）"""
-    # 如果提供了customer_id，检查客户是否存在
     customer = None
     if order_data.customer_id:
         customer = (
@@ -98,15 +85,12 @@ def create_sales_order(
                 status_code=status.HTTP_404_NOT_FOUND, detail="客户不存在"
             )
 
-    # 生成订单号
     order_no = generate_order_no(db)
 
-    # 计算总金额
     total_amount = 0
     if order_data.items:
         total_amount = sum(item.quantity * item.unit_price for item in order_data.items)
 
-    # 创建订单（草稿状态）
     db_order = SalesOrder(
         order_no=order_no,
         customer_id=order_data.customer_id,
@@ -120,12 +104,10 @@ def create_sales_order(
         status=SalesOrderStatusEnum.DRAFT,
     )
     db.add(db_order)
-    db.flush()  # 获取ID
+    db.flush()
 
-    # 创建订单明细（如果有）
     if order_data.items:
         for item_data in order_data.items:
-            # 检查产品是否存在
             product = (
                 db.query(Material).filter(Material.id == item_data.product_id).first()
             )
@@ -148,7 +130,6 @@ def create_sales_order(
 
     db.commit()
     db.refresh(db_order)
-
     return db_order
 
 
@@ -159,7 +140,16 @@ def get_sales_order(
     current_user: User = Depends(get_current_active_user),
 ):
     """获取销售订单详情"""
-    order = db.query(SalesOrder).filter(SalesOrder.id == order_id).first()
+    order = (
+        db.query(SalesOrder)
+        .options(
+            selectinload(SalesOrder.items).selectinload(
+                SalesOrderItem.product
+            ).selectinload(Material.images)
+        )
+        .filter(SalesOrder.id == order_id)
+        .first()
+    )
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="订单不存在")
     return order
@@ -177,13 +167,11 @@ def update_sales_order(
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="订单不存在")
 
-    # 只有草稿状态的订单可以编辑
     if order.status != SalesOrderStatusEnum.DRAFT:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="只有草稿状态的订单可以编辑"
         )
 
-    # 如果提供了customer_id且与当前不同，检查新客户是否存在
     if order_data.customer_id and order_data.customer_id != order.customer_id:
         customer = (
             db.query(Customer).filter(Customer.id == order_data.customer_id).first()
@@ -193,12 +181,10 @@ def update_sales_order(
                 status_code=status.HTTP_404_NOT_FOUND, detail="客户不存在"
             )
 
-    # 更新字段
     update_data = order_data.dict(exclude_unset=True)
     for key, value in update_data.items():
         setattr(order, key, value)
 
-    # 如果提供了customer_id，同步更新customer_name
     if order_data.customer_id:
         customer = db.query(Customer).filter(Customer.id == order.customer_id).first()
         if customer:
@@ -206,26 +192,6 @@ def update_sales_order(
 
     db.commit()
     db.refresh(order)
-
-    return order
-
-
-@router.put("/{order_id}/status", response_model=SalesOrderResponse)
-def update_order_status(
-    order_id: UUID,
-    status: SalesOrderStatusEnum,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-):
-    """更新订单状态"""
-    order = db.query(SalesOrder).filter(SalesOrder.id == order_id).first()
-    if not order:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="订单不存在")
-
-    order.status = status
-    db.commit()
-    db.refresh(order)
-
     return order
 
 
@@ -235,12 +201,11 @@ def delete_sales_order(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """删除销售订单"""
+    """删除销售订单（仅草稿状态可删除）"""
     order = db.query(SalesOrder).filter(SalesOrder.id == order_id).first()
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="订单不存在")
 
-    # 只有草稿状态的订单可以删除
     if order.status != SalesOrderStatusEnum.DRAFT:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="只有草稿状态的订单可以删除"
@@ -248,7 +213,6 @@ def delete_sales_order(
 
     db.delete(order)
     db.commit()
-
     return None
 
 
@@ -264,19 +228,15 @@ def update_sales_order_items(
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="订单不存在")
 
-    # 只有草稿状态的订单可以编辑商品
     if order.status != SalesOrderStatusEnum.DRAFT:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="只有草稿状态的订单可以编辑商品",
         )
 
-    # 删除旧的商品
     db.query(SalesOrderItem).filter(SalesOrderItem.order_id == order_id).delete()
 
-    # 添加新的商品
     for item_data in items:
-        # 检查产品是否存在
         product = db.query(Material).filter(Material.id == item_data.product_id).first()
         if not product:
             raise HTTPException(
@@ -295,14 +255,12 @@ def update_sales_order_items(
         )
         db.add(db_item)
 
-    # 更新订单总金额
     total_amount = sum(item.quantity * item.unit_price for item in items)
     order.total_amount = total_amount
     order.updated_at = datetime.utcnow()
 
     db.commit()
     db.refresh(order)
-
     return order
 
 
@@ -312,41 +270,195 @@ def publish_sales_order(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """发布销售订单（草稿 -> 已确认）"""
+    """发布销售订单（草稿 -> 待处理）"""
     order = db.query(SalesOrder).filter(SalesOrder.id == order_id).first()
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="订单不存在")
 
-    # 只有草稿状态的订单可以发布
     if order.status != SalesOrderStatusEnum.DRAFT:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="只有草稿状态的订单可以发布"
         )
 
-    # 校验订单完整性
     errors = []
 
-    # 1. 客户地址必填
-    if not order.customer_address:
-        errors.append("客户地址不能为空")
-
-    # 2. 快递单号必填
     if not order.express_no:
-        errors.append("快递单号不能为空")
+        errors.append("物流单号不能为空")
 
-    # 3. 至少有一个商品
     if not order.items or len(order.items) == 0:
-        errors.append("订单至少需要一个商品")
+        errors.append("订单至少需要一个物料")
 
     if errors:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"error": "订单信息不完整，请补充以下信息", "fields": errors},
+            detail={"error": "订单信息不完整", "fields": errors},
         )
 
-    # 发布订单
-    order.status = SalesOrderStatusEnum.CONFIRMED
+    order.status = SalesOrderStatusEnum.PENDING
     db.commit()
     db.refresh(order)
+    return order
 
+
+@router.put("/{order_id}/items/{item_id}/confirm", response_model=SalesOrderResponse)
+def confirm_sales_order_item(
+    order_id: UUID,
+    item_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """确认分配物料（扣减库存）"""
+    order = db.query(SalesOrder).filter(SalesOrder.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="订单不存在")
+
+    if order.status != SalesOrderStatusEnum.PENDING:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="只有待处理状态的订单可以分配物料"
+        )
+
+    item = db.query(SalesOrderItem).filter(
+        SalesOrderItem.id == item_id,
+        SalesOrderItem.order_id == order_id,
+    ).first()
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="订单明细不存在")
+
+    if item.is_confirmed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="该物料已分配"
+        )
+
+    product = db.query(Material).filter(Material.id == item.product_id).first()
+    if not product:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="产品不存在")
+
+    if product.current_stock < item.quantity:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"库存不足：{product.name} 当前库存 {product.current_stock}，需要 {item.quantity}",
+        )
+
+    before_stock = product.current_stock
+    product.current_stock -= item.quantity
+    item.is_confirmed = True
+
+    transaction = InventoryTransaction(
+        material_id=product.id,
+        transaction_type=InventoryTransactionTypeEnum.SALES_OUT,
+        quantity=item.quantity,
+        before_quantity=before_stock,
+        after_quantity=product.current_stock,
+        reference_type="sales_order",
+        reference_id=order_id,
+        operator=current_user.username,
+        remark=f"销售订单 {order.order_no} 分配物料",
+    )
+    db.add(transaction)
+
+    db.commit()
+    db.refresh(order)
+    return order
+
+
+@router.put("/{order_id}/confirm-express", response_model=SalesOrderResponse)
+def confirm_express(
+    order_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """确认物流单号"""
+    order = db.query(SalesOrder).filter(SalesOrder.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="订单不存在")
+
+    if order.status != SalesOrderStatusEnum.PENDING:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="只有待处理状态的订单可以确认物流"
+        )
+
+    if order.express_confirmed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="物流单号已确认"
+        )
+
+    order.express_confirmed = True
+    db.commit()
+    db.refresh(order)
+    return order
+
+
+@router.put("/{order_id}/complete", response_model=SalesOrderResponse)
+def complete_sales_order(
+    order_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """完成销售订单"""
+    order = db.query(SalesOrder).filter(SalesOrder.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="订单不存在")
+
+    if order.status != SalesOrderStatusEnum.PENDING:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="只有待处理状态的订单可以完成"
+        )
+
+    unconfirmed_items = [item for item in order.items if not item.is_confirmed]
+    if unconfirmed_items:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"还有 {len(unconfirmed_items)} 个物料未分配，请先分配所有物料",
+        )
+
+    if not order.express_confirmed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="请先确认物流单号"
+        )
+
+    order.status = SalesOrderStatusEnum.COMPLETED
+    db.commit()
+    db.refresh(order)
+    return order
+
+
+@router.put("/{order_id}/cancel", response_model=SalesOrderResponse)
+def cancel_sales_order(
+    order_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """取消销售订单（仅待处理状态可取消）"""
+    order = db.query(SalesOrder).filter(SalesOrder.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="订单不存在")
+
+    if order.status not in (SalesOrderStatusEnum.DRAFT, SalesOrderStatusEnum.PENDING):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="只有草稿或待处理状态的订单可以取消"
+        )
+
+    if order.status == SalesOrderStatusEnum.PENDING:
+        for item in order.items:
+            if item.is_confirmed:
+                product = db.query(Material).filter(Material.id == item.product_id).first()
+                if product:
+                    before_stock = product.current_stock
+                    product.current_stock += item.quantity
+                    transaction = InventoryTransaction(
+                        material_id=product.id,
+                        transaction_type=InventoryTransactionTypeEnum.ADJUSTMENT,
+                        quantity=item.quantity,
+                        before_quantity=before_stock,
+                        after_quantity=product.current_stock,
+                        reference_type="sales_order_cancel",
+                        reference_id=order_id,
+                        operator=current_user.username,
+                        remark=f"取消销售订单 {order.order_no}，退回物料",
+                    )
+                    db.add(transaction)
+
+    order.status = SalesOrderStatusEnum.CANCELLED
+    db.commit()
+    db.refresh(order)
     return order

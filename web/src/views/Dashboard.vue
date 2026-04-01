@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { showToast } from 'vant'
+import { showMessage } from '@/utils/request'
 import { useUserStore } from '@/store/user'
 import request from '@/utils/request'
 
@@ -36,13 +36,15 @@ function handleLogout() {
       <van-tabbar-item icon="orders-o" to="/sales-orders">销售</van-tabbar-item>
       <van-tabbar-item icon="friends-o" to="/production-orders">生产</van-tabbar-item>
       <van-tabbar-item icon="bag-o" to="/materials">物料</van-tabbar-item>
-      <van-tabbar-item icon="setting-o" to="/settings">设置</van-tabbar-item>
     </van-tabbar>
 
     <div class="page-content">
       <div class="header">
         <div class="title">欢迎使用 ERP 系统</div>
-        <div class="logout" @click="handleLogout">退出</div>
+        <div class="header-actions">
+          <van-icon name="setting-o" size="20" color="#999" @click="navigate('/settings')" />
+          <div class="logout" @click="handleLogout">退出</div>
+        </div>
       </div>
 
       <!-- 快捷入口 -->
@@ -127,6 +129,12 @@ function handleLogout() {
 .logout {
   font-size: 14px;
   color: #999;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .module-list {

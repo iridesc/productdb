@@ -75,3 +75,4 @@ web/.output/
 tmp/
 tmp.*
 *.tmp
+uploads/images/

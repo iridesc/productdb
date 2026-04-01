@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { showToast, showLoadingToast, closeToast } from 'vant'
+import { closeToast } from 'vant'
 import { useUserStore } from '@/store/user'
 import request from '@/utils/request'
-import { handleError } from '@/utils/request'
+import { showMessage, handleError } from '@/utils/request'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -15,7 +15,7 @@ const loading = ref(false)
 
 async function handleLogin() {
   if (!username.value || !password.value) {
-    showToast('请输入用户名和密码')
+    showMessage('请输入用户名和密码')
     return
   }
   
@@ -28,11 +28,11 @@ async function handleLogin() {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
     })
     userStore.setToken(res.access_token)
-    showToast('登录成功')
+    showMessage('登录成功')
     router.replace('/dashboard')
   } catch (e) {
     const errorMessage = handleError(e)
-    showToast(errorMessage)
+    showMessage(errorMessage)
   } finally {
     loading.value = false
   }

@@ -7,6 +7,7 @@ from sqlalchemy import (
     Numeric,
     Enum,
     ForeignKey,
+    Integer,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
@@ -67,3 +68,29 @@ class Material(Base):
     product_boms = relationship(
         "BOM", back_populates="product", foreign_keys="BOM.product_id"
     )
+    images = relationship(
+        "MaterialImage", back_populates="material", cascade="all, delete-orphan"
+    )
+
+    @property
+    def thumbnail_url(self) -> str | None:
+        if self.images:
+            first_image = min(self.images, key=lambda x: x.sort_order)
+            return first_image.image_url
+        return None
+
+
+class MaterialImage(Base):
+    __tablename__ = "material_images"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    material_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("materials.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    image_url = Column(String(500), nullable=False)
+    sort_order = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    material = relationship("Material", back_populates="images")

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { showToast, showConfirmDialog } from 'vant'
+import { showConfirmDialog } from 'vant'
 import { 
   getProductionOrder, 
   publishProductionOrder,
@@ -10,7 +10,7 @@ import {
   cancelProductionOrder
 } from '@/api/production'
 import type { ProductionOrder } from '@/types/production'
-import { handleError } from '@/utils/request'
+import { showMessage, handleError } from '@/utils/request'
 
 const route = useRoute()
 const router = useRouter()
@@ -20,9 +20,8 @@ const id = route.params.id as string
 const actionLoading = ref('')
 
 const statusMap: Record<string, string> = {
-  draft: '草稿',
-  published: '已发布',
-  in_progress: '进行中',
+  pending: '待生产',
+  in_production: '生产中',
   completed: '已完成',
   cancelled: '已取消'
 }
@@ -33,7 +32,7 @@ async function fetchDetail() {
     detail.value = await getProductionOrder(id) as any
   } catch (e) {
     const errorMessage = handleError(e)
-    showToast(errorMessage)
+    showMessage(errorMessage)
   } finally {
     loading.value = false
   }
@@ -45,11 +44,11 @@ async function handlePublish() {
   actionLoading.value = 'publish'
   try {
     await publishProductionOrder(id)
-    showToast('发布成功')
+    showMessage('发布成功')
     fetchDetail()
   } catch (e) {
     const errorMessage = handleError(e)
-    showToast(errorMessage)
+    showMessage(errorMessage)
   } finally {
     actionLoading.value = ''
   }
@@ -60,11 +59,11 @@ async function handleDistribute(itemId: string) {
   actionLoading.value = itemId
   try {
     await distributeProductionItem(id, itemId)
-    showToast('库存已分配')
+    showMessage('库存已分配')
     fetchDetail()
   } catch (e) {
     const errorMessage = handleError(e)
-    showToast(errorMessage)
+    showMessage(errorMessage)
   } finally {
     actionLoading.value = ''
   }
@@ -76,11 +75,11 @@ async function handleComplete() {
   actionLoading.value = 'complete'
   try {
     await completeProductionOrder(id)
-    showToast('生产完成，成品已入库')
+    showMessage('生产完成，成品已入库')
     fetchDetail()
   } catch (e) {
     const errorMessage = handleError(e)
-    showToast(errorMessage)
+    showMessage(errorMessage)
   } finally {
     actionLoading.value = ''
   }
@@ -92,11 +91,11 @@ async function handleCancel() {
   actionLoading.value = 'cancel'
   try {
     await cancelProductionOrder(id)
-    showToast('已取消')
+    showMessage('已取消')
     fetchDetail()
   } catch (e) {
     const errorMessage = handleError(e)
-    showToast(errorMessage)
+    showMessage(errorMessage)
   } finally {
     actionLoading.value = ''
   }
@@ -109,7 +108,7 @@ onMounted(() => {
 
 <template>
   <div class="production-detail-page">
-    <van-nav-bar title="生产订单详情" left-arrow @click-left="router.back()" />
+    <van-nav-bar :title="`生产订单｜${detail?.order_no || ''}`" left-arrow @click-left="router.back()" />
 
     <div v-if="detail" class="detail-content">
       <!-- 订单信息 -->
@@ -149,8 +148,8 @@ onMounted(() => {
             <van-tag :type="item.is_distributed ? 'success' : 'warning'" size="large">
               {{ item.is_distributed ? '已分配' : '待分配' }}
             </van-tag>
-            <van-button 
-              v-if="detail.status === 'in_progress' && !item.is_distributed"
+            <van-button
+              v-if="detail.status === 'in_production' && !item.is_distributed"
               size="small" 
               type="primary"
               :loading="actionLoading === item.id"
@@ -164,31 +163,25 @@ onMounted(() => {
 
       <!-- 操作 -->
       <div class="action-btns">
-        <template v-if="detail.status === 'draft'">
+        <template v-if="detail.status === 'pending'">
           <van-button type="primary" block :loading="actionLoading === 'publish'" @click="handlePublish">
-            发布订单
+            开始生产
           </van-button>
         </template>
 
-        <template v-if="detail.status === 'published'">
-          <van-button type="warning" block disabled>
-            等待生产人员分配物料
-          </van-button>
-        </template>
-
-        <template v-if="detail.status === 'in_progress'">
-          <van-button 
+        <template v-if="detail.status === 'in_production'">
+          <van-button
             v-if="!detail.items?.every(i => i.is_distributed)"
-            type="warning" 
-            block 
+            type="warning"
+            block
             disabled
           >
             等待分配所有物料
           </van-button>
-          <van-button 
+          <van-button
             v-else
-            type="primary" 
-            block 
+            type="primary"
+            block
             :loading="actionLoading === 'complete'"
             @click="handleComplete"
           >
@@ -196,11 +189,11 @@ onMounted(() => {
           </van-button>
         </template>
 
-        <template v-if="['published', 'in_progress'].includes(detail.status)">
-          <van-button 
-            type="danger" 
-            plain 
-            block 
+        <template v-if="detail.status === 'in_production'">
+          <van-button
+            type="danger"
+            plain
+            block
             :loading="actionLoading === 'cancel'"
             @click="handleCancel"
             style="margin-top: 12px"
