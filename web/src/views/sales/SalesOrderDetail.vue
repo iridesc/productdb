@@ -14,6 +14,7 @@ import {
 } from '@/api/sales'
 import { getMaterials } from '@/api/material'
 import type { SalesOrder } from '@/types/sales'
+import { handleError } from '@/utils/request'
 
 const route = useRoute()
 const router = useRouter()
@@ -38,8 +39,9 @@ async function fetchDetail() {
   loading.value = true
   try {
     detail.value = await getSalesOrder(id) as any
-  } catch (e: any) {
-    showToast(e.message || '加载失败')
+  } catch (e) {
+    const errorMessage = handleError(e)
+    showToast(errorMessage)
   } finally {
     loading.value = false
   }
@@ -59,7 +61,8 @@ async function loadProducts() {
     }
   } catch (e) {
     console.error('Load products error:', e)
-    showToast('加载商品列表失败')
+    const errorMessage = handleError(e)
+    showToast(errorMessage)
     products.value = []
   }
 }
@@ -113,8 +116,9 @@ async function saveEdit() {
     isEditing.value = false
     tempItems.value = []
     fetchDetail()
-  } catch (e: any) {
-    showToast(e.response?.data?.detail || e.message || '保存失败')
+  } catch (e) {
+    const errorMessage = handleError(e)
+    showToast(errorMessage)
   } finally {
     actionLoading.value = ''
   }
@@ -178,11 +182,9 @@ async function handlePublish() {
     await publishSalesOrder(id)
     showToast('发布成功')
     fetchDetail()
-  } catch (e: any) {
-    const error = typeof e.response?.data?.detail === 'object' 
-      ? e.response.data.detail.error + ': ' + e.response.data.detail.fields.join(', ')
-      : (e.response?.data?.detail || e.message || '发布失败')
-    showToast(error)
+  } catch (e) {
+    const errorMessage = handleError(e)
+    showToast(errorMessage)
   } finally {
     actionLoading.value = ''
   }
@@ -195,8 +197,9 @@ async function handleConfirmItem(itemId: string) {
     await confirmSalesOrderItem(id, itemId)
     showToast('已确认，库存已扣减')
     fetchDetail()
-  } catch (e: any) {
-    showToast(e.message || '确认失败')
+  } catch (e) {
+    const errorMessage = handleError(e)
+    showToast(errorMessage)
   } finally {
     actionLoading.value = ''
   }
@@ -209,8 +212,9 @@ async function handleConfirmExpress() {
     await confirmExpress(id)
     showToast('快递单号已确认')
     fetchDetail()
-  } catch (e: any) {
-    showToast(e.message || '确认失败')
+  } catch (e) {
+    const errorMessage = handleError(e)
+    showToast(errorMessage)
   } finally {
     actionLoading.value = ''
   }
@@ -224,8 +228,9 @@ async function handleComplete() {
     await completeSalesOrder(id)
     showToast('订单已完成')
     fetchDetail()
-  } catch (e: any) {
-    showToast(e.message || '操作失败')
+  } catch (e) {
+    const errorMessage = handleError(e)
+    showToast(errorMessage)
   } finally {
     actionLoading.value = ''
   }
@@ -239,8 +244,9 @@ async function handleCancel() {
     await cancelSalesOrder(id)
     showToast('订单已取消')
     fetchDetail()
-  } catch (e: any) {
-    showToast(e.message || '取消失败')
+  } catch (e) {
+    const errorMessage = handleError(e)
+    showToast(errorMessage)
   } finally {
     actionLoading.value = ''
   }

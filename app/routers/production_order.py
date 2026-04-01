@@ -6,17 +6,16 @@ from datetime import date
 import random
 import string
 
-from database import get_db
-from models import (
+from app.database import get_db
+from app.models import (
     ProductionOrder, ProductionOrderItem, ProductionOrderStatusEnum,
-    SalesOrder, Material, BOM
+    SalesOrder, Material, BOM, User
 )
-from schemas import (
+from app.schemas import (
     ProductionOrderCreate, ProductionOrderUpdate, ProductionOrderResponse,
     ProductionOrderListResponse
 )
-from utils.auth import get_current_active_user
-from models import User
+from app.utils.auth import get_current_active_user
 
 router = APIRouter(prefix="/production-orders", tags=["生产订单"])
 

@@ -1,14 +1,69 @@
-import axios from 'axios'
-import { showToast, showLoadingToast, closeToast } from 'vant'
+import axios, { type AxiosInstance, type AxiosRequestConfig } from 'axios'
+import { showDialog } from 'vant'
 import router from '../router'
 
-const request = axios.create({
+const instance = axios.create({
   baseURL: '/api/v1',
   timeout: 30000
 })
 
-// 请求拦截
-request.interceptors.request.use(
+export function handleError(error: any): string {
+  let errorMessage = '网络错误'
+  
+  if (error.response) {
+    const data = error.response.data
+    if (data) {
+      if (data.detail) {
+        if (Array.isArray(data.detail) && data.detail.length > 0) {
+          if (error.response.status === 422) {
+            const errors: string[] = []
+            data.detail.forEach((item: any) => {
+              if (item.loc) {
+                const field = item.loc[item.loc.length - 1]
+                const msg = item.msg || item.message
+                if (field && msg) {
+                  errors.push(`${field}: ${msg}`)
+                } else if (msg) {
+                  errors.push(msg)
+                }
+              } else if (item.msg || item.message) {
+                errors.push(item.msg || item.message)
+              }
+            })
+            errorMessage = errors.join('；')
+          } else {
+            errorMessage = data.detail[0].msg || data.detail[0].message || errorMessage
+          }
+        } else if (typeof data.detail === 'string') {
+          errorMessage = data.detail
+        } else if (data.detail.error) {
+          errorMessage = data.detail.error
+          if (Array.isArray(data.detail.fields) && data.detail.fields.length > 0) {
+            errorMessage += '：' + data.detail.fields.join('；')
+          }
+        }
+      } else if (data.message) {
+        errorMessage = data.message
+      }
+    }
+    
+    errorMessage = `错误 ${error.response.status}: ${errorMessage}`
+  } else if (error.message) {
+    errorMessage = error.message
+  }
+
+  return errorMessage
+}
+
+function showError(message: string) {
+  showDialog({
+    title: '错误',
+    message: message,
+    confirmButtonText: '确定'
+  })
+}
+
+instance.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token')
     if (token) {
@@ -17,34 +72,40 @@ request.interceptors.request.use(
     return config
   },
   (error) => {
+    const errorMessage = handleError(error)
+    showError(errorMessage)
     return Promise.reject(error)
   }
 )
 
-// 响应拦截
-request.interceptors.response.use(
+instance.interceptors.response.use(
   (response) => {
-    const res = response.data
-    if (res.code && res.code !== 0) {
-      showToast(res.message || '请求失败')
-      return Promise.reject(new Error(res.message || '请求失败'))
-    }
-    return res
+    return response.data
   },
   (error) => {
     if (error.response) {
       if (error.response.status === 401) {
         localStorage.removeItem('token')
         router.push('/login')
-        showToast('登录已过期，请重新登录')
+        showError('登录已过期，请重新登录')
       } else {
-        showToast(error.response.data?.message || '网络错误')
+        const errorMessage = handleError(error)
+        showError(errorMessage)
       }
     } else {
-      showToast('网络连接失败')
+      showError('网络连接失败')
     }
     return Promise.reject(error)
   }
 )
+
+interface Request {
+  get<T = any>(url: string, config?: AxiosRequestConfig): Promise<T>
+  post<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T>
+  put<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T>
+  delete<T = any>(url: string, config?: AxiosRequestConfig): Promise<T>
+}
+
+const request = instance as unknown as Request
 
 export default request

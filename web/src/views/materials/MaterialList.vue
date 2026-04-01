@@ -4,12 +4,14 @@ import { useRouter } from 'vue-router'
 import { showToast, showLoadingToast, Empty } from 'vant'
 import { getMaterials, deleteMaterial } from '@/api/material'
 import type { Material } from '@/types/material'
+import { handleError } from '@/utils/request'
 
 const router = useRouter()
 const loading = ref(false)
 const list = ref<Material[]>([])
 const pagination = ref({ page: 1, page_size: 20, total: 0 })
 const keyword = ref('')
+const selectedCategory = ref<string>('')
 
 const statusMap: Record<string, string> = {
   finished_product: '成品',
@@ -18,20 +20,45 @@ const statusMap: Record<string, string> = {
   auxiliary: '辅料'
 }
 
+const categoryOptions = [
+  { text: '全部', value: '' },
+  { text: '成品', value: 'finished_product' },
+  { text: '半成品', value: 'semi_finished' },
+  { text: '原材料', value: 'raw_material' },
+  { text: '辅料', value: 'auxiliary' }
+]
+
 async function fetchList() {
   loading.value = true
   try {
     const res: any = await getMaterials({
       page: pagination.value.page,
       page_size: pagination.value.page_size,
-      keyword: keyword.value || undefined
+      keyword: keyword.value || undefined,
+      category: selectedCategory.value || undefined
     })
     list.value = res.items
     pagination.value.total = res.total
-  } catch (e: any) {
-    showToast(e.message || '加载失败')
+  } catch (e) {
+    const errorMessage = handleError(e)
+    showToast(errorMessage)
   } finally {
     loading.value = false
+  }
+}
+
+function openCategoryFilter() {
+  // 使用原生的prompt作为临时解决方案
+  const categories = categoryOptions.map((opt, index) => `${index + 1}. ${opt.text}`).join('\n')
+  const input = prompt(`请选择分类:\n${categories}\n\n请输入编号:`, '1')
+  
+  if (input) {
+    const index = parseInt(input) - 1
+    if (index >= 0 && index < categoryOptions.length) {
+      selectedCategory.value = categoryOptions[index].value
+      pagination.value.page = 1
+      fetchList()
+    }
   }
 }
 
@@ -55,16 +82,34 @@ onMounted(() => {
 
 <template>
   <div class="materials-page">
-    <van-nav-bar title="物料管理" left-arrow @click-left="router.back()" />
+    <van-nav-bar 
+      title="物料管理" 
+      left-arrow 
+      @click-left="router.back()"
+    >
+      <template #right>
+        <van-icon name="plus" size="18" @click="goCreate" />
+      </template>
+    </van-nav-bar>
 
-    <!-- 搜索 -->
+    <!-- 搜索和筛选 -->
     <div class="search-bar">
-      <van-search
-        v-model="keyword"
-        placeholder="搜索物料名称/编码"
-        @search="handleSearch"
-        shape="round"
-      />
+      <div class="search-row">
+        <van-search
+          v-model="keyword"
+          placeholder="搜索物料名称/编码"
+          @search="handleSearch"
+          shape="round"
+          style="flex: 1; margin-right: 12px;"
+        />
+        <van-button
+          type="default"
+          @click="openCategoryFilter"
+          style="white-space: nowrap;"
+        >
+          {{ selectedCategory ? statusMap[selectedCategory] : '分类筛选' }}
+        </van-button>
+      </div>
     </div>
 
     <!-- 列表 -->
@@ -100,17 +145,6 @@ onMounted(() => {
         </van-list>
       </van-pull-refresh>
     </div>
-
-    <!-- 新增按钮 -->
-    <van-button
-      type="primary"
-      size="large"
-      block
-      class="add-btn"
-      @click="goCreate"
-    >
-      新增物料
-    </van-button>
   </div>
 </template>
 
@@ -123,6 +157,11 @@ onMounted(() => {
 .search-bar {
   background: #fff;
   padding: 12px 16px;
+}
+
+.search-row {
+  display: flex;
+  align-items: center;
 }
 
 .list-container {
@@ -188,11 +227,5 @@ onMounted(() => {
   color: #999;
 }
 
-.add-btn {
-  position: fixed;
-  bottom: 20px;
-  left: 16px;
-  right: 16px;
-  z-index: 100;
-}
+
 </style>

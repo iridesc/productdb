@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { showToast, showConfirmDialog } from 'vant'
 import { createSalesOrder } from '@/api/sales'
 import { getMaterials } from '@/api/material'
+import { handleError } from '@/utils/request'
 
 const router = useRouter()
 const loading = ref(false)
@@ -29,7 +30,8 @@ async function loadProducts() {
     const res: any = await getMaterials({ page_size: 100 })
     products.value = res.items.filter((p: any) => p.is_active)
   } catch (e) {
-    console.error(e)
+    const errorMessage = handleError(e)
+    showToast(errorMessage)
   }
 }
 
@@ -87,8 +89,9 @@ async function handleSubmit() {
     await createSalesOrder(data)
     showToast('创建成功')
     router.back()
-  } catch (e: any) {
-    showToast(e.response?.data?.detail || e.message || '创建失败')
+  } catch (e) {
+    const errorMessage = handleError(e)
+    showToast(errorMessage)
   } finally {
     loading.value = false
   }

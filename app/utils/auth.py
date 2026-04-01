@@ -5,9 +5,9 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
-from config import settings
-from database import get_db
-from models import User
+from app.config import settings
+from app.database import get_db
+from app.models import User
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/v1/auth/login")
 

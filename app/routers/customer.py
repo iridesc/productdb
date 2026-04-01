@@ -3,11 +3,10 @@ from sqlalchemy.orm import Session
 from typing import Optional, List
 from uuid import UUID
 
-from database import get_db
-from models import Customer
-from schemas import CustomerCreate, CustomerUpdate, CustomerResponse, CustomerListResponse
-from utils.auth import get_current_active_user
-from models import User
+from app.database import get_db
+from app.models import Customer, User
+from app.schemas import CustomerCreate, CustomerUpdate, CustomerResponse, CustomerListResponse
+from app.utils.auth import get_current_active_user
 
 router = APIRouter(prefix="/customers", tags=["客户管理"])
 

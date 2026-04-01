@@ -3,14 +3,13 @@ from sqlalchemy.orm import Session
 from typing import Optional, List
 from uuid import UUID
 
-from database import get_db
-from models import Material, InventoryTransaction, InventoryTransactionTypeEnum, MaterialCategoryEnum
-from schemas import (
+from app.database import get_db
+from app.models import Material, InventoryTransaction, InventoryTransactionTypeEnum, MaterialCategoryEnum, User
+from app.schemas import (
     InventoryTransactionCreate, InventoryTransactionResponse,
     InventoryResponse, InventoryListResponse
 )
-from utils.auth import get_current_active_user
-from models import User
+from app.utils.auth import get_current_active_user
 
 router = APIRouter(prefix="/inventory", tags=["库存管理"])
 
