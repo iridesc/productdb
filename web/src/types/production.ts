@@ -1,7 +1,7 @@
 import type { ID, DateTime } from './common'
 
 // 生产订单状态
-export type ProductionOrderStatus = 'pending' | 'in_production' | 'completed' | 'cancelled'
+export type ProductionOrderStatus = 'draft' | 'pending' | 'in_production' | 'completed' | 'cancelled'
 
 // 生产订单
 export interface ProductionOrder {
@@ -10,6 +10,7 @@ export interface ProductionOrder {
   product_id: ID
   product_name: string
   quantity: number
+  completed_quantity: number
   status: ProductionOrderStatus
   remark?: string
   items: ProductionOrderItem[]
@@ -23,7 +24,7 @@ export interface ProductionOrderItem {
   material_id: ID
   material_name: string
   quantity: number
-  is_distributed: boolean
+  consumed_quantity: number
   created_at: DateTime
 }
 

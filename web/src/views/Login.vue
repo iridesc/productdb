@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { closeToast } from 'vant'
 import { useUserStore } from '@/store/user'
+import { getCurrentUserRoles } from '@/api/production'
 import request from '@/utils/request'
 import { showMessage, handleError } from '@/utils/request'
 
@@ -18,7 +19,7 @@ async function handleLogin() {
     showMessage('请输入用户名和密码')
     return
   }
-  
+
   loading.value = true
   try {
     const formData = new FormData()
@@ -28,6 +29,13 @@ async function handleLogin() {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
     })
     userStore.setToken(res.access_token)
+    // 获取用户角色
+    try {
+      const rolesRes: any = await getCurrentUserRoles()
+      userStore.setRoles(rolesRes.roles?.map((r: any) => r.code) || [])
+    } catch (_) {
+      // 如果获取角色失败，不影响登录流程
+    }
     showMessage('登录成功')
     router.replace('/dashboard')
   } catch (e) {

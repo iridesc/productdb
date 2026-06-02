@@ -2,12 +2,12 @@ from .material import Material, MaterialCategory, MaterialCategoryEnum, Material
 from .transaction import (
     BOM, Customer, SalesOrder, SalesOrderItem, SalesOrderStatusEnum,
     ProductionOrder, ProductionOrderItem, ProductionOrderStatusEnum,
-    InventoryTransaction, InventoryTransactionTypeEnum, User
+    InventoryTransaction, InventoryTransactionTypeEnum, User, Role, UserRole
 )
 
 __all__ = [
     "Material",
-    "MaterialCategory", 
+    "MaterialCategory",
     "MaterialCategoryEnum",
     "MaterialImage",
     "BOM",
@@ -21,4 +21,6 @@ __all__ = [
     "InventoryTransaction",
     "InventoryTransactionTypeEnum",
     "User",
+    "Role",
+    "UserRole",
 ]

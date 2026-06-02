@@ -6,7 +6,7 @@ from datetime import timedelta
 from app.database import get_db
 from app.schemas import Token, LoginRequest
 from app.models import User
-from app.utils.auth import verify_password, create_access_token, get_password_hash
+from app.utils.auth import verify_password, create_access_token, get_password_hash, get_current_active_user
 from app.config import settings
 
 router = APIRouter(prefix="/auth", tags=["认证"])
@@ -62,3 +62,18 @@ def register(
     db.refresh(new_user)
     
     return {"message": "用户创建成功", "user_id": str(new_user.id)}
+
+
+@router.get("/me/roles")
+def get_my_roles(
+    current_user: User = Depends(get_current_active_user),
+):
+    """获取当前用户的角色列表"""
+    return {
+        "user_id": str(current_user.id),
+        "username": current_user.username,
+        "roles": [
+            {"code": ur.role_code, "name": ur.role.name if ur.role else ur.role_code}
+            for ur in current_user.roles
+        ],
+    }
