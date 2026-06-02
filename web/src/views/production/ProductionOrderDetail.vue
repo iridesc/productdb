@@ -1,25 +1,32 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { showConfirmDialog } from 'vant'
-import { 
-  getProductionOrder, 
+import {
+  getProductionOrder,
   publishProductionOrder,
-  distributeProductionItem,
+  startProductionOrder,
   completeProductionOrder,
-  cancelProductionOrder
+  cancelProductionOrder,
+  deleteProductionOrder,
 } from '@/api/production'
 import type { ProductionOrder } from '@/types/production'
 import { showMessage, handleError } from '@/utils/request'
+import { useUserStore } from '@/store/user'
 
 const route = useRoute()
 const router = useRouter()
+const userStore = useUserStore()
 const loading = ref(false)
 const detail = ref<ProductionOrder | null>(null)
 const id = route.params.id as string
 const actionLoading = ref('')
 
+const isOperator = computed(() => userStore.isOperator())
+const isWorker = computed(() => userStore.isWorker())
+
 const statusMap: Record<string, string> = {
+  draft: '草稿',
   pending: '待生产',
   in_production: '生产中',
   completed: '已完成',
@@ -38,13 +45,13 @@ async function fetchDetail() {
   }
 }
 
-// 发布
+// 发布（仅运营/管理员，从草稿发布）
 async function handlePublish() {
-  await showConfirmDialog({ title: '确认发布', message: '发布后将开始生产流程' })
+  await showConfirmDialog({ title: '确认发布', message: '发布后将检验物料库存并扣减，确定发布吗？' })
   actionLoading.value = 'publish'
   try {
     await publishProductionOrder(id)
-    showMessage('发布成功')
+    showMessage('发布成功，物料已扣减')
     fetchDetail()
   } catch (e) {
     const errorMessage = handleError(e)
@@ -54,12 +61,13 @@ async function handlePublish() {
   }
 }
 
-// 分配物料
-async function handleDistribute(itemId: string) {
-  actionLoading.value = itemId
+// 开工（仅工人/管理员）
+async function handleStart() {
+  await showConfirmDialog({ title: '确认开工', message: '确定要开始生产吗？' })
+  actionLoading.value = 'start'
   try {
-    await distributeProductionItem(id, itemId)
-    showMessage('库存已分配')
+    await startProductionOrder(id)
+    showMessage('已开工')
     fetchDetail()
   } catch (e) {
     const errorMessage = handleError(e)
@@ -69,9 +77,9 @@ async function handleDistribute(itemId: string) {
   }
 }
 
-// 完成
+// 报工完成（仅工人/管理员，成品入库）
 async function handleComplete() {
-  await showConfirmDialog({ title: '确认完成', message: '确定生产已完成吗？' })
+  await showConfirmDialog({ title: '确认完成', message: '确定生产已完成吗？完成将自动入库。' })
   actionLoading.value = 'complete'
   try {
     await completeProductionOrder(id)
@@ -85,14 +93,30 @@ async function handleComplete() {
   }
 }
 
-// 取消
+// 取消（仅运营/管理员，仅待生产状态可取消）
 async function handleCancel() {
-  await showConfirmDialog({ title: '确认取消', message: '确定要取消吗？' })
+  await showConfirmDialog({ title: '确认取消', message: '取消后将退回已扣物料库存，确定要取消吗？' })
   actionLoading.value = 'cancel'
   try {
     await cancelProductionOrder(id)
-    showMessage('已取消')
+    showMessage('已取消，物料库存已退回')
     fetchDetail()
+  } catch (e) {
+    const errorMessage = handleError(e)
+    showMessage(errorMessage)
+  } finally {
+    actionLoading.value = ''
+  }
+}
+
+// 删除草稿
+async function handleDelete() {
+  await showConfirmDialog({ title: '确认删除', message: '确定要删除此草稿吗？此操作不可恢复。' })
+  actionLoading.value = 'delete'
+  try {
+    await deleteProductionOrder(id)
+    showMessage('已删除')
+    router.back()
   } catch (e) {
     const errorMessage = handleError(e)
     showMessage(errorMessage)
@@ -120,7 +144,7 @@ onMounted(() => {
         </div>
         <div class="info-row">
           <span class="label">状态</span>
-          <span class="value status">{{ statusMap[detail.status] }}</span>
+          <span class="value status">{{ statusMap[detail.status] || detail.status }}</span>
         </div>
         <div class="info-row">
           <span class="label">产品</span>
@@ -130,77 +154,88 @@ onMounted(() => {
           <span class="label">生产数量</span>
           <span class="value">{{ detail.quantity }}</span>
         </div>
+        <div class="info-row" v-if="detail.status === 'completed'">
+          <span class="label">完成数量</span>
+          <span class="value">{{ detail.completed_quantity }}</span>
+        </div>
+        <div class="info-row" v-if="detail.remark">
+          <span class="label">备注</span>
+          <span class="value">{{ detail.remark }}</span>
+        </div>
       </div>
 
       <!-- BOM物料 -->
       <div class="card">
         <div class="card-title">物料需求</div>
-        <div 
-          v-for="item in detail.items" 
-          :key="item.id" 
+        <div
+          v-for="item in detail.items"
+          :key="item.id"
           class="material-item"
         >
           <div class="material-info">
             <div class="material-name">{{ item.material_name }}</div>
             <div class="material-quantity">需求: {{ item.quantity }}</div>
           </div>
-          <div class="material-action">
-            <van-tag :type="item.is_distributed ? 'success' : 'warning'" size="large">
-              {{ item.is_distributed ? '已分配' : '待分配' }}
-            </van-tag>
-            <van-button
-              v-if="detail.status === 'in_production' && !item.is_distributed"
-              size="small" 
-              type="primary"
-              :loading="actionLoading === item.id"
-              @click="handleDistribute(item.id)"
-            >
-              分配
-            </van-button>
-          </div>
         </div>
+        <van-empty v-if="!detail.items || detail.items.length === 0" description="暂无物料" />
       </div>
 
-      <!-- 操作 -->
+      <!-- 操作按钮：按状态和角色显示 -->
       <div class="action-btns">
-        <template v-if="detail.status === 'pending'">
+        <!-- 草稿：运营可编辑/删除/发布 -->
+        <template v-if="detail.status === 'draft' && isOperator">
           <van-button type="primary" block :loading="actionLoading === 'publish'" @click="handlePublish">
-            开始生产
+            发布（校验库存并扣减）
+          </van-button>
+          <van-button
+            type="danger"
+            plain
+            block
+            :loading="actionLoading === 'delete'"
+            @click="handleDelete"
+            style="margin-top: 12px"
+          >
+            删除草稿
           </van-button>
         </template>
 
-        <template v-if="detail.status === 'in_production'">
-          <van-button
-            v-if="!detail.items?.every(i => i.is_distributed)"
-            type="warning"
-            block
-            disabled
-          >
-            等待分配所有物料
+        <!-- 待生产：运营可取消，工人可开工 -->
+        <template v-if="detail.status === 'pending'">
+          <van-button v-if="isWorker" type="primary" block :loading="actionLoading === 'start'" @click="handleStart">
+            开工
           </van-button>
           <van-button
-            v-else
-            type="primary"
-            block
-            :loading="actionLoading === 'complete'"
-            @click="handleComplete"
-          >
-            完成生产
-          </van-button>
-        </template>
-
-        <template v-if="detail.status === 'in_production'">
-          <van-button
+            v-if="isOperator"
             type="danger"
             plain
             block
             :loading="actionLoading === 'cancel'"
             @click="handleCancel"
-            style="margin-top: 12px"
+            :style="isWorker ? 'margin-top: 12px' : ''"
           >
-            取消订单
+            取消订单（退回物料）
           </van-button>
         </template>
+
+        <!-- 生产中：工人可报工 -->
+        <template v-if="detail.status === 'in_production' && isWorker">
+          <van-button type="primary" block :loading="actionLoading === 'complete'" @click="handleComplete">
+            报工完成（成品入库）
+          </van-button>
+        </template>
+
+        <!-- 已完成/已取消：无操作 -->
+        <template v-if="detail.status === 'completed' || detail.status === 'cancelled'">
+          <van-button type="default" block disabled>
+            {{ detail.status === 'completed' ? '订单已完成' : '订单已取消' }}
+          </van-button>
+        </template>
+
+        <!-- 非运营/非工人提示 -->
+        <van-empty
+          v-if="!isOperator && !isWorker"
+          description="暂无操作权限"
+        />
       </div>
     </div>
   </div>
@@ -216,11 +251,31 @@ onMounted(() => {
   padding: 16px;
 }
 
+.card {
+  background: #fff;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.card-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #eee;
+}
+
 .info-row {
   display: flex;
   justify-content: space-between;
   padding: 10px 0;
   border-bottom: 1px solid #f5f5f5;
+}
+
+.info-row:last-child {
+  border-bottom: none;
 }
 
 .label {
@@ -258,12 +313,6 @@ onMounted(() => {
   font-size: 12px;
   color: #999;
   margin-top: 4px;
-}
-
-.material-action {
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 
 .action-btns {

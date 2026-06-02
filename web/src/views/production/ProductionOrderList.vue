@@ -1,17 +1,23 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { showMessage } from '@/utils/request'
 import { getProductionOrders } from '@/api/production'
 import type { ProductionOrder } from '@/types/production'
 import { handleError } from '@/utils/request'
+import { useUserStore } from '@/store/user'
 
 const router = useRouter()
+const userStore = useUserStore()
 const loading = ref(false)
 const list = ref<ProductionOrder[]>([])
 const pagination = ref({ page: 1, page_size: 20, total: 0 })
+const activeStatus = ref<string>('')
+
+const isOperator = computed(() => userStore.isOperator())
 
 const statusMap: Record<string, string> = {
+  draft: '草稿',
   pending: '待生产',
   in_production: '生产中',
   completed: '已完成',
@@ -19,7 +25,8 @@ const statusMap: Record<string, string> = {
 }
 
 const statusColor: Record<string, string> = {
-  pending: '#999',
+  draft: '#909399',
+  pending: '#e6a23c',
   in_production: '#fa8c16',
   completed: '#52c41a',
   cancelled: '#ff4d4f'
@@ -28,10 +35,14 @@ const statusColor: Record<string, string> = {
 async function fetchList() {
   loading.value = true
   try {
-    const res: any = await getProductionOrders({
+    const params: any = {
       page: pagination.value.page,
       page_size: pagination.value.page_size
-    })
+    }
+    if (activeStatus.value) {
+      params.status = activeStatus.value
+    }
+    const res: any = await getProductionOrders(params)
     list.value = res.items
     pagination.value.total = res.total
   } catch (e) {
@@ -50,6 +61,11 @@ function goDetail(id: string) {
   router.push(`/production-orders/${id}`)
 }
 
+function filterByStatus(status: string) {
+  activeStatus.value = activeStatus.value === status ? '' : status
+  fetchList()
+}
+
 onMounted(() => {
   fetchList()
 })
@@ -59,9 +75,24 @@ onMounted(() => {
   <div class="production-page">
     <van-nav-bar title="生产订单" left-arrow @click-left="router.back()">
       <template #right>
-        <van-icon name="plus" size="18" @click="goCreate" />
+        <van-icon v-if="isOperator" name="plus" size="18" @click="goCreate" />
       </template>
     </van-nav-bar>
+
+    <!-- 状态筛选 -->
+    <div class="status-filters">
+      <van-tag
+        v-for="s in ['draft', 'pending', 'in_production', 'completed', 'cancelled']"
+        :key="s"
+        :type="activeStatus === s ? 'primary' : 'default'"
+        :color="activeStatus === s ? statusColor[s] : undefined"
+        size="large"
+        style="margin-right: 8px; cursor: pointer"
+        @click="filterByStatus(s)"
+      >
+        {{ statusMap[s] }}
+      </van-tag>
+    </div>
 
     <div class="table-container">
       <van-pull-refresh v-model="loading" @refresh="fetchList">
@@ -83,7 +114,7 @@ onMounted(() => {
                 <td>
                   <span class="status-tag"
                     :style="{ background: statusColor[item.status] + '20', color: statusColor[item.status] }">
-                    {{ statusMap[item.status] }}
+                    {{ statusMap[item.status] || item.status }}
                   </span>
                 </td>
                 <td>{{ item.product_name }}</td>
@@ -107,8 +138,15 @@ onMounted(() => {
   background: #f5f5f5;
 }
 
+.status-filters {
+  padding: 12px 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .table-container {
-  padding: 16px;
+  padding: 0 16px 16px;
 }
 
 .table-wrapper {

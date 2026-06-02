@@ -88,6 +88,7 @@ class SalesOrderItem(Base):
 
 
 class ProductionOrderStatusEnum(str, enum.Enum):
+    DRAFT = "draft"  # 草稿
     PENDING = "pending"  # 待生产
     IN_PRODUCTION = "in_production"  # 生产中
     COMPLETED = "completed"  # 已完成
@@ -156,6 +157,26 @@ class InventoryTransaction(Base):
     material = relationship("Material")
 
 
+class Role(Base):
+    __tablename__ = "roles"
+
+    code = Column(String(20), primary_key=True)
+    name = Column(String(50), nullable=False)
+    description = Column(String(200), nullable=True)
+
+
+class UserRole(Base):
+    __tablename__ = "user_roles"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    role_code = Column(String(20), ForeignKey("roles.code"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User", back_populates="roles")
+    role = relationship("Role")
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -168,3 +189,5 @@ class User(Base):
     is_superuser = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    roles = relationship("UserRole", back_populates="user")

@@ -38,7 +38,7 @@ async function handleSubmit() {
   loading.value = true
   try {
     await createProductionOrder(form.value as any)
-    showMessage('创建成功')
+    showMessage('草稿创建成功，请确认物料库存后发布')
     router.back()
   } catch (e) {
     const errorMessage = handleError(e)
@@ -52,6 +52,14 @@ async function handleSubmit() {
 <template>
   <div class="create-page">
     <van-nav-bar title="创建生产订单" left-arrow @click-left="router.back()" />
+
+    <van-notice-bar
+      left-icon="info-o"
+      color="#1989fa"
+      background="#ecf5ff"
+      text="创建后将生成草稿，需在详情页确认库存后发布。"
+      wrapable
+    />
 
     <van-form @submit="handleSubmit">
       <van-cell-group inset title="生产信息">
@@ -80,7 +88,7 @@ async function handleSubmit() {
 
       <div class="submit-btn">
         <van-button type="primary" size="large" :loading="loading" native-type="submit">
-          提交
+          创建草稿
         </van-button>
       </div>
     </van-form>

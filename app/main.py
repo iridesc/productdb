@@ -4,17 +4,54 @@ from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 
 from app.config import settings
-from app.database import engine, Base
+from app.database import engine, Base, SessionLocal
 from app.routers import routers
+from app.models import Role, User, UserRole
 import os
 
 UPLOAD_DIR = "/app/uploads"
+
+
+def init_roles():
+    """初始化系统角色"""
+    db = SessionLocal()
+    try:
+        default_roles = [
+            ("admin", "管理员", "拥有系统所有权限"),
+            ("operator", "运营", "负责物料管理、库存调整、生产订单的创建和发布"),
+            ("worker", "工人", "负责领取生产订单、开工、报工"),
+            ("sales", "销售", "负责销售订单相关操作"),
+            ("shipping", "发货", "负责发货相关操作"),
+        ]
+        created_any = False
+        for code, name, desc in default_roles:
+            existing = db.query(Role).filter(Role.code == code).first()
+            if not existing:
+                db.add(Role(code=code, name=name, description=desc))
+                created_any = True
+
+        # 如果是首次初始化（roles 表原本为空），给现有用户分配 admin 角色
+        if created_any and not db.query(Role).count() > len(default_roles):
+            users = db.query(User).all()
+            for user in users:
+                existing_role = (
+                    db.query(UserRole)
+                    .filter(UserRole.user_id == user.id, UserRole.role_code == "admin")
+                    .first()
+                )
+                if not existing_role:
+                    db.add(UserRole(user_id=user.id, role_code="admin"))
+
+        db.commit()
+    finally:
+        db.close()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     os.makedirs(os.path.join(UPLOAD_DIR, "images"), exist_ok=True)
     Base.metadata.create_all(bind=engine)
+    init_roles()
     yield
     pass
 

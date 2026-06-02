@@ -89,6 +89,22 @@ router.beforeEach((to, from, next) => {
   if (to.meta.title) {
     document.title = to.meta.title as string
   }
+  // 路由守卫：需要登录的页面检查 token
+  if (to.meta.requiresAuth) {
+    const token = localStorage.getItem('token')
+    if (!token) {
+      next('/login')
+      return
+    }
+  }
+  // 已登录用户访问 login 页面重定向到首页
+  if (to.path === '/login') {
+    const token = localStorage.getItem('token')
+    if (token) {
+      next('/dashboard')
+      return
+    }
+  }
   next()
 })
 
