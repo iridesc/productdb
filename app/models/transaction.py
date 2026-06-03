@@ -106,7 +106,7 @@ class ProductionOrder(Base):
     completed_quantity = Column(Numeric(10, 2), default=0)
     start_date = Column(Date, nullable=True)
     end_date = Column(Date, nullable=True)
-    status = Column(Enum(ProductionOrderStatusEnum), default=ProductionOrderStatusEnum.PENDING)
+    status = Column(Enum(ProductionOrderStatusEnum), default=ProductionOrderStatusEnum.DRAFT)
     remark = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

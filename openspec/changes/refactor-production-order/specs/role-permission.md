@@ -74,3 +74,4 @@ require_roles("worker", "admin")     # 同上
 - 纯工人角色用户的生产订单列表应当仅展示 `pending` 和 `in_production` 状态的订单。
 - 运营角色用户应当看到所有状态的订单和所有操作入口。
 - 同时拥有 operator + worker 角色的用户应当拥有两者的所有权限。
+- 页面刷新后应当在 App.vue 的 onMounted 中自动恢复 token 并重新获取用户角色，避免 Pinia store 丢失导致按钮不可见。

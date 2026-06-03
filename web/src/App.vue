@@ -3,17 +3,25 @@ import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { showMessage } from '@/utils/request'
 import { useUserStore } from '@/store/user'
+import { getCurrentUserRoles } from '@/api/production'
 
 const router = useRouter()
 const route = useRoute()
 const userStore = useUserStore()
 const loading = ref(true)
 
-// 检查登录状态
+// 检查登录状态并恢复用户信息
 onMounted(async () => {
   const token = localStorage.getItem('token')
   if (token) {
     userStore.setToken(token)
+    // 恢复用户角色（页面刷新后 Pinia store 丢失，需重新获取）
+    try {
+      const rolesRes: any = await getCurrentUserRoles()
+      userStore.setRoles(rolesRes.roles?.map((r: any) => r.code) || [])
+    } catch (_) {
+      // 获取角色失败不阻塞页面加载
+    }
   }
   loading.value = false
 })
