@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { showConfirmDialog } from 'vant'
+import { showConfirmDialog, showDialog } from 'vant'
 import {
   getProductionOrder,
   publishProductionOrder,
@@ -53,9 +53,24 @@ async function handlePublish() {
     await publishProductionOrder(id)
     showMessage('发布成功，物料已扣减')
     fetchDetail()
-  } catch (e) {
-    const errorMessage = handleError(e)
-    showMessage(errorMessage)
+  } catch (e: any) {
+    // 物料库存不足时，展示带物料链接的详细信息
+    const shortages = e?.response?.data?.detail?.shortages
+    if (shortages && Array.isArray(shortages) && shortages.length > 0) {
+      const lines = shortages.map((s: any) => {
+        const name = s.material_name || s.material_code || '未知物料'
+        const shortfall = s.required - s.current_stock
+        return `<a href="/materials/${s.material_id}" target="_blank" style="color:#1989fa;text-decoration:none">${name}</a>：库存 <b>${s.current_stock}</b>，需要 <b>${s.required}</b>，缺少 <b style="color:#ff4d4f">${shortfall > 0 ? shortfall : 0}</b>`
+      })
+      showDialog({
+        title: '物料库存不足',
+        message: lines.join('<br/>'),
+        allowHtml: true,
+        confirmButtonText: '知道了',
+      })
+    } else {
+      showMessage(handleError(e))
+    }
   } finally {
     actionLoading.value = ''
   }
@@ -148,7 +163,10 @@ onMounted(() => {
         </div>
         <div class="info-row">
           <span class="label">产品</span>
-          <span class="value">{{ detail.product_name }}</span>
+          <span class="value">
+            <a v-if="detail.product" :href="`/materials/${detail.product.id}`" target="_blank" class="link">{{ detail.product.name }}</a>
+            <span v-else>{{ detail.product_name }}</span>
+          </span>
         </div>
         <div class="info-row">
           <span class="label">生产数量</span>
@@ -173,7 +191,7 @@ onMounted(() => {
           class="material-item"
         >
           <div class="material-info">
-            <div class="material-name">{{ item.material_name }}</div>
+            <a :href="`/materials/${item.material_id}`" target="_blank" class="link">{{ item.material_name }}</a>
             <div class="material-quantity">需求: {{ item.quantity }}</div>
           </div>
         </div>
@@ -307,6 +325,16 @@ onMounted(() => {
 .material-name {
   font-size: 14px;
   color: #333;
+}
+
+.link {
+  color: #1989fa;
+  text-decoration: none;
+  font-size: 14px;
+}
+
+.link:hover {
+  text-decoration: underline;
 }
 
 .material-quantity {

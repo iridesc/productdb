@@ -223,10 +223,23 @@ def publish_production_order(
             status_code=status.HTTP_400_BAD_REQUEST, detail="只有草稿状态的订单可以发布"
         )
 
+    # 如果订单还没有物料需求（BOM 在订单创建之后才设置），自动生成
     if not order.items or len(order.items) == 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="订单没有物料需求，无法发布"
-        )
+        boms = db.query(BOM).filter(BOM.product_id == order.product_id).all()
+        if not boms:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="订单没有物料需求，无法发布"
+            )
+        for bom in boms:
+            required_quantity = order.quantity * bom.quantity * (1 + bom.scrap_rate / 100)
+            db_item = ProductionOrderItem(
+                production_order_id=order.id,
+                material_id=bom.material_id,
+                quantity=required_quantity
+            )
+            db.add(db_item)
+        db.flush()
+        db.refresh(order)
 
     # 逐个检查 BOM 物料库存是否充足
     shortages = []

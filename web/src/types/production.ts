@@ -9,6 +9,15 @@ export interface ProductionOrder {
   order_no: string
   product_id: ID
   product_name: string
+  product?: {
+    id: ID
+    name: string
+    code: string
+    category: string
+    unit: string
+    price: number
+    current_stock: number
+  }
   quantity: number
   completed_quantity: number
   status: ProductionOrderStatus

@@ -38,6 +38,14 @@ export function handleError(error: any): string {
           errorMessage = data.detail
         } else if (data.detail.error) {
           errorMessage = data.detail.error
+          if (Array.isArray(data.detail.shortages) && data.detail.shortages.length > 0) {
+            const msgs = data.detail.shortages.map((s: any) => {
+              const name = s.material_name || s.material_code || '未知物料'
+              const shortfall = s.required - s.current_stock
+              return `${name}(库存${s.current_stock}, 需要${s.required}, 缺${shortfall > 0 ? shortfall : 0})`
+            })
+            errorMessage += '：' + msgs.join('；')
+          }
           if (Array.isArray(data.detail.fields) && data.detail.fields.length > 0) {
             errorMessage += '：' + data.detail.fields.join('；')
           }
