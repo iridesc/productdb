@@ -18,10 +18,8 @@ from app.database import Base
 
 
 class MaterialCategoryEnum(str, enum.Enum):
-    FINISHED_PRODUCT = "finished_product"  # 成品
-    SEMI_FINISHED = "semi_finished"  # 半成品
-    RAW_MATERIAL = "raw_material"  # 原材料
-    AUXILIARY = "auxiliary"  # 辅料
+    PRODUCT = "product"  # 产品
+    COMPONENT = "component"  # 部件
 
 
 class MaterialCategory(Base):

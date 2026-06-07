@@ -1,7 +1,17 @@
 import type { ID, DateTime } from './common'
 
 // 生产订单状态
-export type ProductionOrderStatus = 'draft' | 'pending' | 'in_production' | 'completed' | 'cancelled'
+export type ProductionOrderStatus = 'pending' | 'in_production' | 'completed' | 'cancelled'
+
+// 生产订单产品图
+export interface ProductionOrderImage {
+  id: ID
+  order_id: ID
+  image_type: string
+  image_url: string
+  sort_order: number
+  created_at: DateTime
+}
 
 // 生产订单
 export interface ProductionOrder {
@@ -9,22 +19,20 @@ export interface ProductionOrder {
   order_no: string
   product_id: ID
   product_name: string
-  product?: {
-    id: ID
-    name: string
-    code: string
-    category: string
-    unit: string
-    price: number
-    current_stock: number
-  }
   quantity: number
   completed_quantity: number
   status: ProductionOrderStatus
   remark?: string
   items: ProductionOrderItem[]
+  images: ProductionOrderImage[]
   created_at: DateTime
   updated_at: DateTime
+  product?: {
+    id: ID
+    name: string
+    code: string
+    thumbnail_url?: string
+  }
 }
 
 // 生产订单明细
@@ -34,7 +42,13 @@ export interface ProductionOrderItem {
   material_name: string
   quantity: number
   consumed_quantity: number
+  is_distributed: boolean
   created_at: DateTime
+  material?: {
+    id: ID
+    name: string
+    thumbnail_url?: string
+  }
 }
 
 // 创建生产订单

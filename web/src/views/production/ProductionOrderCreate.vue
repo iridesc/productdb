@@ -23,7 +23,7 @@ function selectProduct(product: any) {
   form.value.product_name = product.name
 }
 
-const finishedProductFilter = (item: any) => item.category === 'finished_product'
+const finishedProductFilter = (item: any) => item.category === 'product'
 
 async function handleSubmit() {
   if (!form.value.product_id) {

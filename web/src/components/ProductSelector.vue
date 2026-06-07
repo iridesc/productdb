@@ -23,7 +23,7 @@ const loading = ref(false)
 async function loadProducts(keyword?: string) {
   loading.value = true
   try {
-    const params: any = { page_size: 100, is_active: true }
+    const params: any = { page_size: 100 }
     if (keyword) {
       params.keyword = keyword
     }
@@ -52,7 +52,6 @@ function handleSearch(value: string) {
 watch(() => props.modelValue, (val) => {
   if (val) {
     searchKeyword.value = ''
-    loadProducts()
   }
 })
 
@@ -67,7 +66,7 @@ function selectProduct(product: any) {
 </script>
 
 <template>
-  <van-popup :show="modelValue" @update:show="emit('update:modelValue', $event)" position="bottom" round style="height: 70%">
+  <van-popup :show="modelValue" @update:show="emit('update:modelValue', $event)" @open="loadProducts()" position="bottom" round style="height: 70%">
     <div class="product-picker-header">
       <div class="picker-title">选择产品</div>
       <van-icon name="cross" @click="emit('update:modelValue', false)" />

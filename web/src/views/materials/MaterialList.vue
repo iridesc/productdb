@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { previewImage } from '@/utils/image'
 import { Empty } from 'vant'
 import { showMessage } from '@/utils/request'
 import { getMaterials, deleteMaterial } from '@/api/material'
@@ -12,28 +13,23 @@ const loading = ref(false)
 const list = ref<Material[]>([])
 const pagination = ref({ page: 1, page_size: 20, total: 0 })
 const keyword = ref('')
-const selectedCategory = ref<string>('')
+const selectedCategory = ref<string[]>([])
+const showCategoryPopup = ref(false)
 
 const statusMap: Record<string, string> = {
-  finished_product: '成品',
-  semi_finished: '半成品',
-  raw_material: '原材料',
-  auxiliary: '辅料'
+  product: '产品',
+  component: '部件'
 }
 
 const categoryColor: Record<string, string> = {
-  finished_product: '#52c41a',
-  semi_finished: '#fa8c16',
-  raw_material: '#1890ff',
-  auxiliary: '#722ed1'
+  product: '#1890ff',
+  component: '#fa8c16'
 }
 
 const categoryOptions = [
   { text: '全部', value: '' },
-  { text: '成品', value: 'finished_product' },
-  { text: '半成品', value: 'semi_finished' },
-  { text: '原材料', value: 'raw_material' },
-  { text: '辅料', value: 'auxiliary' }
+  { text: '产品', value: 'product' },
+  { text: '部件', value: 'component' }
 ]
 
 async function fetchList() {
@@ -43,7 +39,7 @@ async function fetchList() {
       page: pagination.value.page,
       page_size: pagination.value.page_size,
       keyword: keyword.value || undefined,
-      category: selectedCategory.value || undefined
+      category: selectedCategory.value.length > 0 ? selectedCategory.value.join(',') : undefined
     })
     list.value = res.items
     pagination.value.total = res.total
@@ -56,17 +52,31 @@ async function fetchList() {
 }
 
 function openCategoryFilter() {
-  const categories = categoryOptions.map((opt, index) => `${index + 1}. ${opt.text}`).join('\n')
-  const input = prompt(`请选择分类:\n${categories}\n\n请输入编号:`, '1')
-  
-  if (input) {
-    const index = parseInt(input) - 1
-    if (index >= 0 && index < categoryOptions.length) {
-      selectedCategory.value = categoryOptions[index].value
-      pagination.value.page = 1
-      fetchList()
+  showCategoryPopup.value = true
+}
+
+function handleCategoryClick(option: { text: string; value: string }) {
+  if (option.value === '') {
+    // 全部选项：选所有非"全部"的选项，或者清空
+    if (selectedCategory.value.length === categoryOptions.length - 1) {
+      selectedCategory.value = []
+    } else {
+      selectedCategory.value = categoryOptions.filter(o => o.value !== '').map(o => o.value)
+    }
+  } else {
+    const index = selectedCategory.value.indexOf(option.value)
+    if (index > -1) {
+      selectedCategory.value.splice(index, 1)
+    } else {
+      selectedCategory.value.push(option.value)
     }
   }
+}
+
+function confirmCategoryFilter() {
+  showCategoryPopup.value = false
+  pagination.value.page = 1
+  fetchList()
 }
 
 function handleSearch() {
@@ -114,10 +124,37 @@ onMounted(() => {
           @click="openCategoryFilter"
           style="white-space: nowrap;"
         >
-          {{ selectedCategory ? statusMap[selectedCategory] : '分类筛选' }}
+          {{ selectedCategory.length > 0 ? `已选${selectedCategory.length}个` : '分类筛选' }}
         </van-button>
       </div>
     </div>
+
+    <!-- 分类筛选弹窗 -->
+    <van-popup v-model:show="showCategoryPopup" position="bottom" round>
+      <div class="category-popup">
+        <div class="popup-header">
+          <span class="popup-title">选择分类</span>
+          <van-button type="primary" size="small" @click="confirmCategoryFilter">确定</van-button>
+        </div>
+        <van-checkbox-group v-model="selectedCategory">
+          <van-cell-group>
+            <van-cell
+              v-for="option in categoryOptions"
+              :key="option.value"
+              clickable
+              @click="handleCategoryClick(option)"
+            >
+              <template #title>
+                <span class="category-text">{{ option.text }}</span>
+              </template>
+              <template #right-icon>
+                <van-checkbox :name="option.value" @click.stop />
+              </template>
+            </van-cell>
+          </van-cell-group>
+        </van-checkbox-group>
+      </div>
+    </van-popup>
 
     <!-- 表格 -->
     <div class="table-container">
@@ -126,9 +163,9 @@ onMounted(() => {
           <table class="material-table">
             <thead>
               <tr>
+                <th>物料编码</th>
                 <th class="thumb-cell">图片</th>
                 <th>物料名称</th>
-                <th>物料编码</th>
                 <th>分类</th>
                 <th>当前库存</th>
                 <th>安全库存</th>
@@ -137,19 +174,20 @@ onMounted(() => {
             </thead>
             <tbody>
               <tr v-for="item in list" :key="item.id" @click="goDetail(item.id)">
+                <td class="code-cell">{{ item.code }}</td>
                 <td class="thumb-cell">
                   <img
                     v-if="item.thumbnail_url"
                     class="material-thumb"
                     :src="item.thumbnail_url"
                     :alt="item.name"
+                    @click.stop="previewImage(item.thumbnail_url)"
                   />
                   <div v-else class="material-thumb material-thumb-placeholder">
                     <van-icon name="photo-o" size="16" />
                   </div>
                 </td>
                 <td class="name-cell">{{ item.name }}</td>
-                <td class="code-cell">{{ item.code }}</td>
                 <td>
                   <span class="category-tag"
                     :style="{ background: categoryColor[item.category] + '20', color: categoryColor[item.category] }">
@@ -195,14 +233,12 @@ onMounted(() => {
 .table-wrapper {
   background: #fff;
   border-radius: 8px;
-  overflow-x: auto;
 }
 
 .material-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
-  white-space: nowrap;
 }
 
 .material-table thead {
@@ -210,19 +246,21 @@ onMounted(() => {
 }
 
 .material-table th {
-  padding: 12px 10px;
+  padding: 12px 8px;
   text-align: left;
   font-weight: 600;
   color: #666;
   border-bottom: 2px solid #eee;
   font-size: 13px;
+  white-space: nowrap;
 }
 
 .material-table td {
-  padding: 14px 10px;
+  padding: 12px 8px;
   border-bottom: 1px solid #f5f5f5;
   color: #333;
   vertical-align: middle;
+  white-space: nowrap;
 }
 
 .material-table tbody tr {
@@ -284,5 +322,25 @@ onMounted(() => {
   font-size: 12px;
   padding: 3px 10px;
   border-radius: 4px;
+}
+
+.category-popup {
+  padding: 16px;
+}
+
+.popup-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.popup-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.category-text {
+  margin-left: 8px;
 }
 </style>

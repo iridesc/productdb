@@ -1,11 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session, selectinload
+from sqlalchemy import or_
 from typing import Optional, List
 from uuid import UUID
 from decimal import Decimal
 
 from app.database import get_db
 from app.models import Material, MaterialCategory, MaterialImage, User, BOM
+from app.models.transaction import SalesOrder, SalesOrderItem, ProductionOrder, ProductionOrderItem, InventoryTransaction
 from app.schemas import (
     MaterialCreate,
     MaterialUpdate,
@@ -56,6 +58,7 @@ def add_cost_to_material(material: Material, db: Session) -> dict:
         "category_info": material.category_info,
         "bom_cost": bom_cost,
         "total_cost": total_cost,
+        "thumbnail_url": material.thumbnail_url,
     }
     return material_dict
 
@@ -74,7 +77,9 @@ def get_materials(
     query = db.query(Material).options(selectinload(Material.images))
 
     if category:
-        query = query.filter(Material.category == category)
+        categories = [c.strip() for c in category.split(',') if c.strip()]
+        if categories:
+            query = query.filter(Material.category.in_(categories))
     if keyword:
         query = query.filter(
             (Material.name.contains(keyword)) | (Material.code.contains(keyword))
@@ -119,7 +124,7 @@ def get_material(
     current_user: User = Depends(get_current_active_user),
 ):
     """获取物料详情"""
-    material = db.query(Material).filter(Material.id == material_id).first()
+    material = db.query(Material).options(selectinload(Material.images)).filter(Material.id == material_id).first()
     if not material:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="物料不存在")
     return add_cost_to_material(material, db)
@@ -149,6 +154,7 @@ def update_material(
 @router.delete("/{material_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_material(
     material_id: UUID,
+    cascade: bool = Query(False, description="是否级联删除所有关联数据（销售订单、生产订单、库存记录）"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -157,6 +163,10 @@ def delete_material(
     if not material:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="物料不存在")
 
+    # ===== 收集所有外键依赖 =====
+    dependencies = {}
+
+    # 1. BOM 依赖（此物料作为组件被其他产品引用）
     dependent_boms = db.query(BOM).filter(BOM.material_id == material_id).all()
     if dependent_boms:
         product_names = []
@@ -164,14 +174,95 @@ def delete_material(
             product = db.query(Material).filter(Material.id == bom.product_id).first()
             if product:
                 product_names.append(f"{product.code} - {product.name}")
+        dependencies["bom"] = {
+            "message": f"此物料被 {len(dependent_boms)} 个产品的BOM引用为组件",
+            "products": product_names,
+        }
 
+    # 2. 销售订单依赖（此物料被作为商品）
+    so_items = db.query(SalesOrderItem).filter(SalesOrderItem.product_id == material_id).all()
+    if so_items:
+        order_ids = list(set(i.order_id for i in so_items))
+        orders = db.query(SalesOrder).filter(SalesOrder.id.in_(order_ids)).all()
+        dependencies["sales_orders"] = {
+            "message": f"此物料被 {len(so_items)} 个销售订单行项目引用，涉及 {len(orders)} 个销售订单",
+            "orders": [{"id": str(o.id), "order_no": o.order_no} for o in orders],
+        }
+
+    # 3. 生产订单依赖（此物料作为生产成品）
+    po_as_product = db.query(ProductionOrder).filter(ProductionOrder.product_id == material_id).all()
+    if po_as_product:
+        dependencies["production_orders"] = {
+            "message": f"此物料被 {len(po_as_product)} 个生产订单引用为生产成品",
+            "orders": [{"id": str(o.id), "order_no": o.order_no} for o in po_as_product],
+        }
+
+    # 4. 生产订单物料依赖（此物料作为生产原料）
+    poi_items = db.query(ProductionOrderItem).filter(ProductionOrderItem.material_id == material_id).all()
+    if poi_items:
+        po_ids = list(set(i.production_order_id for i in poi_items))
+        pos = db.query(ProductionOrder).filter(ProductionOrder.id.in_(po_ids)).all()
+        dependencies["production_order_items"] = {
+            "message": f"此物料被 {len(poi_items)} 个生产订单行项目引用为原料，涉及 {len(pos)} 个生产订单",
+            "orders": [{"id": str(o.id), "order_no": o.order_no} for o in pos],
+        }
+
+    # 5. 库存流水依赖
+    inv_count = db.query(InventoryTransaction).filter(InventoryTransaction.material_id == material_id).count()
+    if inv_count > 0:
+        dependencies["inventory"] = {
+            "message": f"此物料有 {inv_count} 条库存流水记录",
+        }
+
+    # ===== 如果没有依赖，直接删除 =====
+    if not dependencies:
+        db.query(BOM).filter(BOM.product_id == material_id).delete(synchronize_session=False)
+        db.delete(material)
+        db.commit()
+        return None
+
+    # ===== 有依赖但未要求级联 → 返回 409 =====
+    if not cascade:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"无法删除：以下物料的BOM依赖此物料：{', '.join(product_names)}。请先删除或修改这些物料的BOM。",
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": "该物料存在以下依赖关系，无法直接删除",
+                "dependencies": dependencies,
+            },
         )
 
-    db.query(BOM).filter(BOM.product_id == material_id).delete()
+    # ===== 级联删除所有依赖 =====
+    # BOM：不可级联删除（需要用户手动处理BOM结构）
+    if "bom" in dependencies:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"无法级联删除：{dependencies['bom']['message']}。请先手动修改BOM结构。",
+        )
 
+    # 销售订单项 + 订单
+    if "sales_orders" in dependencies:
+        order_ids = [o["id"] for o in dependencies["sales_orders"]["orders"]]
+        db.query(SalesOrderItem).filter(SalesOrderItem.order_id.in_(order_ids)).delete(synchronize_session=False)
+        db.query(SalesOrder).filter(SalesOrder.id.in_(order_ids)).delete(synchronize_session=False)
+
+    # 生产订单项 + 生产订单（作为产品）
+    if "production_orders" in dependencies:
+        po_ids = [o["id"] for o in dependencies["production_orders"]["orders"]]
+        db.query(ProductionOrderItem).filter(ProductionOrderItem.production_order_id.in_(po_ids)).delete(synchronize_session=False)
+        db.query(ProductionOrder).filter(ProductionOrder.id.in_(po_ids)).delete(synchronize_session=False)
+
+    # 生产订单项（作为原料）
+    if "production_order_items" in dependencies:
+        db.query(ProductionOrderItem).filter(ProductionOrderItem.material_id == material_id).delete(synchronize_session=False)
+
+    # 库存流水
+    if "inventory" in dependencies:
+        db.query(InventoryTransaction).filter(InventoryTransaction.material_id == material_id).delete(synchronize_session=False)
+
+    # 删除此物料作为产品的BOM
+    db.query(BOM).filter(BOM.product_id == material_id).delete(synchronize_session=False)
+
+    # 最后删除物料
     db.delete(material)
     db.commit()
 

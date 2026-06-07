@@ -1,10 +1,12 @@
-from pydantic import BaseModel, Field
-from typing import Optional, List
+from pydantic import BaseModel, Field, computed_field
+from pydantic import field_serializer
+from typing import Optional, List, Any
 from uuid import UUID
 from datetime import datetime, date
 from decimal import Decimal
 from app.models.material import MaterialCategoryEnum
 from app.models.transaction import (
+    SalesOrderImageType,
     SalesOrderStatusEnum,
     ProductionOrderStatusEnum,
     InventoryTransactionTypeEnum,
@@ -57,6 +59,7 @@ class MaterialCreate(MaterialBase):
 
 
 class MaterialUpdate(BaseModel):
+    code: Optional[str] = None
     name: Optional[str] = None
     category: Optional[MaterialCategoryEnum] = None
     unit: Optional[str] = None
@@ -204,6 +207,18 @@ class SalesOrderItemResponse(SalesOrderItemBase):
         from_attributes = True
 
 
+class SalesOrderImageResponse(BaseModel):
+    id: UUID
+    order_id: UUID
+    image_type: SalesOrderImageType
+    image_url: str
+    sort_order: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 class SalesOrderBase(BaseModel):
     customer_id: Optional[UUID] = None
     customer_name: Optional[str] = None
@@ -237,6 +252,7 @@ class SalesOrderResponse(SalesOrderBase):
     updated_at: datetime
     customer: Optional[CustomerResponse] = None
     items: List[SalesOrderItemResponse] = []
+    images: List[SalesOrderImageResponse] = []
 
     class Config:
         from_attributes = True
@@ -269,6 +285,22 @@ class ProductionOrderItemResponse(ProductionOrderItemBase):
         from_attributes = True
 
 
+class ProductionOrderImageResponse(BaseModel):
+    id: UUID
+    order_id: UUID
+    image_type: str
+    image_url: str
+    sort_order: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class YieldUpdate(BaseModel):
+    completed_quantity: Decimal = Field(..., gt=0)
+
+
 class ProductionOrderBase(BaseModel):
     sales_order_id: Optional[UUID] = None
     product_id: UUID
@@ -299,6 +331,7 @@ class ProductionOrderResponse(ProductionOrderBase):
     product: MaterialResponse
     sales_order: Optional[SalesOrderResponse] = None
     items: List[ProductionOrderItemResponse] = []
+    images: List[ProductionOrderImageResponse] = []
 
     class Config:
         from_attributes = True
@@ -360,12 +393,28 @@ class InventoryListResponse(BaseModel):
 
 class UserBase(BaseModel):
     username: str = Field(..., max_length=50)
-    email: str = Field(..., max_length=100)
-    full_name: Optional[str] = Field(None, max_length=100)
+    can_view_dashboard: bool = True
+    can_manage_materials: bool = True
+    can_manage_sales: bool = True
+    can_manage_production: bool = True
+    can_manage_inventory: bool = True
+    can_manage_users: bool = False
 
 
 class UserCreate(UserBase):
     password: str = Field(..., min_length=6)
+
+
+class UserUpdate(BaseModel):
+    username: Optional[str] = Field(None, max_length=50)
+    is_active: Optional[bool] = None
+    is_superuser: Optional[bool] = None
+    can_view_dashboard: Optional[bool] = None
+    can_manage_materials: Optional[bool] = None
+    can_manage_sales: Optional[bool] = None
+    can_manage_production: Optional[bool] = None
+    can_manage_inventory: Optional[bool] = None
+    can_manage_users: Optional[bool] = None
 
 
 class UserResponse(UserBase):

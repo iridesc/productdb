@@ -28,8 +28,12 @@ export function updateMaterial(id: string, data: MaterialUpdate) {
 }
 
 // 删除物料
-export function deleteMaterial(id: string) {
-  return request.delete(`/materials/${id}`)
+export function deleteMaterial(id: string, cascade?: boolean) {
+  const params: any = {}
+  if (cascade) {
+    params.cascade = true
+  }
+  return request.delete(`/materials/${id}`, { params })
 }
 
 // 获取标签列表

@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+import os
+import uuid as uuid_lib
+
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form
 from sqlalchemy.orm import Session, selectinload
 from typing import Optional, List
 from uuid import UUID
@@ -7,6 +10,8 @@ from datetime import date, datetime
 from app.database import get_db
 from app.models import (
     SalesOrder,
+    SalesOrderImage,
+    SalesOrderImageType,
     SalesOrderItem,
     SalesOrderStatusEnum,
     Customer,
@@ -20,12 +25,21 @@ from app.schemas import (
     SalesOrderUpdate,
     SalesOrderResponse,
     SalesOrderListResponse,
+    SalesOrderImageResponse,
     SalesOrderItemCreate,
     SalesOrderItemResponse,
 )
 from app.utils.auth import get_current_active_user
 
 router = APIRouter(prefix="/sales-orders", tags=["销售订单"])
+
+UPLOAD_DIR = "/app/uploads/images"
+ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
+
+
+def ensure_upload_dir():
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
 def generate_order_no(db: Session) -> str:
@@ -46,7 +60,9 @@ def get_sales_orders(
     current_user: User = Depends(get_current_active_user),
 ):
     """获取销售订单列表"""
-    query = db.query(SalesOrder)
+    query = db.query(SalesOrder).options(
+        selectinload(SalesOrder.items).selectinload(SalesOrderItem.product)
+    )
 
     if status:
         query = query.filter(SalesOrder.status == status)
@@ -84,6 +100,15 @@ def create_sales_order(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="客户不存在"
             )
+
+    # 校验每种产品数量不超过1000
+    if order_data.items:
+        for item in order_data.items:
+            if item.quantity > 1000:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"每种产品数量不得超过1000，当前数量: {item.quantity}"
+                )
 
     order_no = generate_order_no(db)
 
@@ -145,7 +170,8 @@ def get_sales_order(
         .options(
             selectinload(SalesOrder.items).selectinload(
                 SalesOrderItem.product
-            ).selectinload(Material.images)
+            ).selectinload(Material.images),
+            selectinload(SalesOrder.images),
         )
         .filter(SalesOrder.id == order_id)
         .first()
@@ -234,6 +260,14 @@ def update_sales_order_items(
             detail="只有草稿状态的订单可以编辑商品",
         )
 
+    # 校验每种产品数量不超过1000
+    for item in items:
+        if item.quantity > 1000:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"每种产品数量不得超过1000，当前数量: {item.quantity}"
+            )
+
     db.query(SalesOrderItem).filter(SalesOrderItem.order_id == order_id).delete()
 
     for item_data in items:
@@ -270,8 +304,8 @@ def publish_sales_order(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """发布销售订单（草稿 -> 待处理）"""
-    order = db.query(SalesOrder).filter(SalesOrder.id == order_id).first()
+    """发布销售订单（草稿 -> 待处理），检查库存并一次性扣减"""
+    order = db.query(SalesOrder).options(selectinload(SalesOrder.items)).filter(SalesOrder.id == order_id).first()
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="订单不存在")
 
@@ -294,6 +328,39 @@ def publish_sales_order(
             detail={"error": "订单信息不完整", "fields": errors},
         )
 
+    # 检查所有物料库存
+    for item in order.items:
+        product = db.query(Material).filter(Material.id == item.product_id).first()
+        if not product:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"产品不存在 (ID: {item.product_id})",
+            )
+        if product.current_stock < item.quantity:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"库存不足：{product.name} 当前库存 {product.current_stock}，需要 {item.quantity}",
+            )
+
+    # 一次性扣减所有物料库存
+    for item in order.items:
+        product = db.query(Material).filter(Material.id == item.product_id).first()
+        before_stock = product.current_stock
+        product.current_stock -= item.quantity
+
+        transaction = InventoryTransaction(
+            material_id=product.id,
+            transaction_type=InventoryTransactionTypeEnum.SALES_OUT,
+            quantity=item.quantity,
+            before_quantity=before_stock,
+            after_quantity=product.current_stock,
+            reference_type="sales_order",
+            reference_id=order_id,
+            operator=current_user.username,
+            remark=f"销售订单 {order.order_no} 锁定库存",
+        )
+        db.add(transaction)
+
     order.status = SalesOrderStatusEnum.PENDING
     db.commit()
     db.refresh(order)
@@ -307,7 +374,7 @@ def confirm_sales_order_item(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """确认分配物料（扣减库存）"""
+    """确认分配物料（标记操作，库存已在发布时锁定）"""
     order = db.query(SalesOrder).filter(SalesOrder.id == order_id).first()
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="订单不存在")
@@ -329,63 +396,124 @@ def confirm_sales_order_item(
             status_code=status.HTTP_400_BAD_REQUEST, detail="该物料已分配"
         )
 
-    product = db.query(Material).filter(Material.id == item.product_id).first()
-    if not product:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="产品不存在")
-
-    if product.current_stock < item.quantity:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"库存不足：{product.name} 当前库存 {product.current_stock}，需要 {item.quantity}",
-        )
-
-    before_stock = product.current_stock
-    product.current_stock -= item.quantity
     item.is_confirmed = True
-
-    transaction = InventoryTransaction(
-        material_id=product.id,
-        transaction_type=InventoryTransactionTypeEnum.SALES_OUT,
-        quantity=item.quantity,
-        before_quantity=before_stock,
-        after_quantity=product.current_stock,
-        reference_type="sales_order",
-        reference_id=order_id,
-        operator=current_user.username,
-        remark=f"销售订单 {order.order_no} 分配物料",
-    )
-    db.add(transaction)
-
     db.commit()
     db.refresh(order)
     return order
 
 
-@router.put("/{order_id}/confirm-express", response_model=SalesOrderResponse)
-def confirm_express(
+@router.post("/{order_id}/images", response_model=SalesOrderImageResponse, status_code=status.HTTP_201_CREATED)
+async def upload_sales_order_image(
     order_id: UUID,
+    file: UploadFile = File(...),
+    image_type: SalesOrderImageType = Form(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """确认物流单号"""
+    """上传销售订单凭证图片（仅待处理状态）"""
     order = db.query(SalesOrder).filter(SalesOrder.id == order_id).first()
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="订单不存在")
 
     if order.status != SalesOrderStatusEnum.PENDING:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="只有待处理状态的订单可以确认物流"
+            status_code=status.HTTP_400_BAD_REQUEST, detail="只有待处理状态的订单可以上传图片"
         )
 
-    if order.express_confirmed:
+    filename = file.filename or ""
+    ext = os.path.splitext(filename)[1].lower()
+
+    if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="物流单号已确认"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"不支持的文件格式，支持: {', '.join(ALLOWED_EXTENSIONS)}"
         )
 
-    order.express_confirmed = True
+    content = await file.read()
+    if len(content) > MAX_FILE_SIZE:
+        size_mb = len(content) / (1024 * 1024)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"图片太大({size_mb:.1f}MB)，请压缩到5MB以内"
+        )
+
+    ensure_upload_dir()
+
+    unique_filename = f"{uuid_lib.uuid4().hex}{ext}"
+    filepath = os.path.join(UPLOAD_DIR, unique_filename)
+
+    with open(filepath, "wb") as f:
+        f.write(content)
+
+    max_sort = (
+        db.query(SalesOrderImage.sort_order)
+        .filter(SalesOrderImage.order_id == order_id)
+        .order_by(SalesOrderImage.sort_order.desc())
+        .first()
+    )
+    next_sort = (max_sort[0] + 1) if max_sort else 0
+
+    image = SalesOrderImage(
+        order_id=order_id,
+        image_type=image_type,
+        image_url=f"/api/v1/uploads/{unique_filename}",
+        sort_order=next_sort,
+    )
+    db.add(image)
     db.commit()
-    db.refresh(order)
-    return order
+    db.refresh(image)
+
+    # 物流图片上传自动确认物流
+    if image_type == SalesOrderImageType.LOGISTICS and not order.express_confirmed:
+        order.express_confirmed = True
+        db.commit()
+
+    return image
+
+
+@router.get("/{order_id}/images", response_model=List[SalesOrderImageResponse])
+def get_sales_order_images(
+    order_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """获取销售订单凭证图片列表"""
+    order = db.query(SalesOrder).filter(SalesOrder.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="订单不存在")
+
+    images = (
+        db.query(SalesOrderImage)
+        .filter(SalesOrderImage.order_id == order_id)
+        .order_by(SalesOrderImage.image_type, SalesOrderImage.sort_order)
+        .all()
+    )
+    return images
+
+
+@router.delete("/images/{image_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_sales_order_image(
+    image_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """删除凭证图片"""
+    image = db.query(SalesOrderImage).filter(SalesOrderImage.id == image_id).first()
+    if not image:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="图片不存在")
+
+    try:
+        filename = os.path.basename(image.image_url)
+        filepath = os.path.join(UPLOAD_DIR, filename)
+        if os.path.exists(filepath):
+            os.remove(filepath)
+    except Exception:
+        pass
+
+    db.delete(image)
+    db.commit()
+
+    return None
 
 
 @router.put("/{order_id}/complete", response_model=SalesOrderResponse)
@@ -395,7 +523,15 @@ def complete_sales_order(
     current_user: User = Depends(get_current_active_user),
 ):
     """完成销售订单"""
-    order = db.query(SalesOrder).filter(SalesOrder.id == order_id).first()
+    order = (
+        db.query(SalesOrder)
+        .options(
+            selectinload(SalesOrder.items),
+            selectinload(SalesOrder.images),
+        )
+        .filter(SalesOrder.id == order_id)
+        .first()
+    )
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="订单不存在")
 
@@ -411,9 +547,24 @@ def complete_sales_order(
             detail=f"还有 {len(unconfirmed_items)} 个物料未分配，请先分配所有物料",
         )
 
-    if not order.express_confirmed:
+    product_images = [
+        img for img in order.images
+        if img.image_type == SalesOrderImageType.PRODUCT_SHIPPING
+    ]
+    logistics_images = [
+        img for img in order.images
+        if img.image_type == SalesOrderImageType.LOGISTICS
+    ]
+
+    if not product_images:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="请先确认物流单号"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="请先上传产品发货图片",
+        )
+    if not logistics_images:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="请先上传物流凭证图片",
         )
 
     order.status = SalesOrderStatusEnum.COMPLETED
@@ -439,24 +590,24 @@ def cancel_sales_order(
         )
 
     if order.status == SalesOrderStatusEnum.PENDING:
+        # 发布时已扣减所有物料库存，取消时全部退回
         for item in order.items:
-            if item.is_confirmed:
-                product = db.query(Material).filter(Material.id == item.product_id).first()
-                if product:
-                    before_stock = product.current_stock
-                    product.current_stock += item.quantity
-                    transaction = InventoryTransaction(
-                        material_id=product.id,
-                        transaction_type=InventoryTransactionTypeEnum.ADJUSTMENT,
-                        quantity=item.quantity,
-                        before_quantity=before_stock,
-                        after_quantity=product.current_stock,
-                        reference_type="sales_order_cancel",
-                        reference_id=order_id,
-                        operator=current_user.username,
-                        remark=f"取消销售订单 {order.order_no}，退回物料",
-                    )
-                    db.add(transaction)
+            product = db.query(Material).filter(Material.id == item.product_id).first()
+            if product:
+                before_stock = product.current_stock
+                product.current_stock += item.quantity
+                transaction = InventoryTransaction(
+                    material_id=product.id,
+                    transaction_type=InventoryTransactionTypeEnum.ADJUSTMENT,
+                    quantity=item.quantity,
+                    before_quantity=before_stock,
+                    after_quantity=product.current_stock,
+                    reference_type="sales_order_cancel",
+                    reference_id=order_id,
+                    operator=current_user.username,
+                    remark=f"取消销售订单 {order.order_no}，退回物料",
+                )
+                db.add(transaction)
 
     order.status = SalesOrderStatusEnum.CANCELLED
     db.commit()
