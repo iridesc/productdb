@@ -10,13 +10,7 @@ const routes: RouteRecordRaw[] = [
   },
   {
     path: '/',
-    redirect: '/dashboard'
-  },
-  {
-    path: '/dashboard',
-    name: 'Dashboard',
-    component: () => import('@/views/Dashboard.vue'),
-    meta: { title: '首页', requiresAuth: true }
+    redirect: '/sales-orders'
   },
   {
     path: '/materials',
@@ -77,6 +71,12 @@ const routes: RouteRecordRaw[] = [
     name: 'Inventory',
     component: () => import('@/views/inventory/InventoryList.vue'),
     meta: { title: '库存管理', requiresAuth: true }
+  },
+  {
+    path: '/accounts',
+    name: 'AccountManagement',
+    component: () => import('@/views/settings/AccountManagement.vue'),
+    meta: { title: '账号管理', requiresAuth: true }
   }
 ]
 
@@ -89,23 +89,14 @@ router.beforeEach((to, from, next) => {
   if (to.meta.title) {
     document.title = to.meta.title as string
   }
-  // 路由守卫：需要登录的页面检查 token
-  if (to.meta.requiresAuth) {
-    const token = localStorage.getItem('token')
-    if (!token) {
-      next('/login')
-      return
-    }
+  
+  const token = localStorage.getItem('token')
+  
+  if (to.meta.requiresAuth && !token) {
+    next('/login')
+  } else {
+    next()
   }
-  // 已登录用户访问 login 页面重定向到首页
-  if (to.path === '/login') {
-    const token = localStorage.getItem('token')
-    if (token) {
-      next('/dashboard')
-      return
-    }
-  }
-  next()
 })
 
 export default router

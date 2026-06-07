@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { previewImage } from '@/utils/image'
 import { showMessage } from '@/utils/request'
 import { getSalesOrders } from '@/api/sales'
 import type { SalesOrder } from '@/types/sales'
@@ -19,10 +20,23 @@ const statusMap: Record<string, string> = {
 }
 
 const statusColor: Record<string, string> = {
-  draft: '#999',
+  draft: '#666666',
   pending: '#fa8c16',
   completed: '#52c41a',
   cancelled: '#ff4d4f'
+}
+
+// 获取订单商品缩略图（最多4张）
+function getOrderThumbnails(order: SalesOrder): string[] {
+  const images: string[] = []
+  if (order.items) {
+    for (const item of order.items) {
+      if (item.product?.thumbnail_url && images.length < 4) {
+        images.push(item.product.thumbnail_url)
+      }
+    }
+  }
+  return images
 }
 
 async function fetchList() {
@@ -70,9 +84,9 @@ onMounted(() => {
             <thead>
               <tr>
                 <th>订单号</th>
+                <th>图片</th>
                 <th>状态</th>
                 <th>客户</th>
-                <th>快递单号</th>
                 <th>金额</th>
                 <th>商品数</th>
                 <th>创建时间</th>
@@ -82,13 +96,18 @@ onMounted(() => {
               <tr v-for="item in list" :key="item.id" @click="goDetail(item.id)">
                 <td class="order-no-cell">{{ item.order_no }}</td>
                 <td>
+                  <div class="thumbnail-list">
+                    <img v-for="(img, idx) in getOrderThumbnails(item)" :key="idx" :src="img" class="thumbnail-img" @click.stop="previewImage(img)" />
+                    <span v-if="!getOrderThumbnails(item).length" class="no-image">-</span>
+                  </div>
+                </td>
+                <td>
                   <span class="status-tag"
                     :style="{ background: statusColor[item.status] + '20', color: statusColor[item.status] }">
                     {{ statusMap[item.status] }}
                   </span>
                 </td>
                 <td>{{ item.customer_name || '-' }}</td>
-                <td>{{ item.express_no || '-' }}</td>
                 <td class="price-cell">¥{{ item.total_amount }}</td>
                 <td class="center-cell">{{ item.items?.length || 0 }}</td>
                 <td>{{ item.created_at?.slice(0, 10) }}</td>
@@ -116,14 +135,12 @@ onMounted(() => {
 .table-wrapper {
   background: #fff;
   border-radius: 8px;
-  overflow-x: auto;
 }
 
 .order-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
-  white-space: nowrap;
 }
 
 .order-table thead {
@@ -131,19 +148,21 @@ onMounted(() => {
 }
 
 .order-table th {
-  padding: 12px 10px;
+  padding: 12px 8px;
   text-align: left;
   font-weight: 600;
   color: #666;
   border-bottom: 2px solid #eee;
   font-size: 13px;
+  white-space: nowrap;
 }
 
 .order-table td {
-  padding: 14px 10px;
+  padding: 12px 8px;
   border-bottom: 1px solid #f5f5f5;
   color: #333;
   vertical-align: middle;
+  white-space: nowrap;
 }
 
 .order-table tbody tr {
@@ -162,6 +181,9 @@ onMounted(() => {
 .order-no-cell {
   font-weight: 600;
   color: #1989fa;
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .price-cell {
@@ -178,5 +200,24 @@ onMounted(() => {
   font-size: 12px;
   padding: 3px 10px;
   border-radius: 4px;
+}
+
+.thumbnail-list {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.thumbnail-img {
+  width: 36px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid #f0f0f0;
+}
+
+.no-image {
+  color: #999;
+  font-size: 12px;
 }
 </style>

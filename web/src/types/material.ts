@@ -1,7 +1,7 @@
 import type { ID, DateTime } from './common'
 
 // 物料分类
-export type MaterialCategory = 'finished_product' | 'semi_finished' | 'raw_material' | 'auxiliary'
+export type MaterialCategory = 'product' | 'component'
 
 // 物料
 export interface Material {
@@ -40,6 +40,7 @@ export interface MaterialCreate {
 }
 
 export interface MaterialUpdate {
+  code?: string
   name?: string
   category?: MaterialCategory
   unit?: string

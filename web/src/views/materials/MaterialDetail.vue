@@ -20,8 +20,9 @@ const showUnitPicker = ref(false)
 const id = route.params.id as string
 
 const form = ref({
+  code: '',
   name: '',
-  category: 'finished_product' as MaterialCategory,
+  category: 'product' as MaterialCategory,
   unit: '个',
   safety_stock: 1,
   current_stock: 0,
@@ -32,10 +33,8 @@ const form = ref({
 })
 
 const categoryOptions = [
-  { text: '成品', value: 'finished_product' },
-  { text: '半成品', value: 'semi_finished' },
-  { text: '原材料', value: 'raw_material' },
-  { text: '辅料', value: 'auxiliary' }
+  { text: '产品', value: 'product' },
+  { text: '部件', value: 'component' }
 ]
 
 const unitOptions = [
@@ -49,10 +48,8 @@ const unitOptions = [
 ]
 
 const categoryMap: Record<string, string> = {
-  finished_product: '成品',
-  semi_finished: '半成品',
-  raw_material: '原材料',
-  auxiliary: '辅料'
+  product: '产品',
+  component: '部件'
 }
 
 const poStatusMap: Record<string, string> = {
@@ -106,6 +103,7 @@ async function fetchDetail() {
     detail.value = await getMaterial(id) as any
     if (detail.value) {
       form.value = {
+        code: detail.value.code || '',
         name: detail.value.name,
         category: detail.value.category,
         unit: detail.value.unit,
@@ -252,7 +250,56 @@ async function handleDelete() {
     await deleteMaterial(id)
     showMessage('删除成功')
     router.back()
-  } catch (e) {
+  } catch (e: any) {
+    // 用户取消弹窗（showConfirmDialog 取消会 throw）
+    if (e === 'cancel') return
+
+    const status = e?.response?.status
+    const detail = e?.response?.data?.detail
+
+    // 检查是否有外键依赖
+    if (status === 409 && detail?.dependencies) {
+      const deps = detail.dependencies
+      const lines: string[] = ['该物料无法直接删除，存在以下依赖：', '']
+
+      if (deps.bom) lines.push(`• ${deps.bom.message}`)
+      if (deps.sales_orders) lines.push(`• ${deps.sales_orders.message}`)
+      if (deps.production_orders) lines.push(`• ${deps.production_orders.message}`)
+      if (deps.production_order_items) lines.push(`• ${deps.production_order_items.message}`)
+      if (deps.inventory) lines.push(`• ${deps.inventory.message}`)
+
+      // BOM 依赖不可级联删除
+      if (deps.bom) {
+        showMessage(typeof deps.bom.message === 'string' ? deps.bom.message : '存在BOM依赖，请先手动处理')
+        return
+      }
+
+      lines.push('')
+      lines.push('是否连同关联数据一起删除？')
+
+      try {
+        await showConfirmDialog({
+          title: '删除确认',
+          message: lines.join('<br>'),
+          allowHtml: true
+        })
+      } catch {
+        return
+      }
+
+      try {
+        await deleteMaterial(id, true)
+        showMessage('物料及关联数据已删除')
+        router.back()
+      } catch (e2: any) {
+        const msg2 = e2?.response?.data?.detail?.message || e2?.response?.data?.detail || '删除失败'
+        showMessage(typeof msg2 === 'string' ? msg2 : '删除失败')
+      }
+      return
+    }
+
+    const msg = detail?.message || detail || '删除失败'
+    showMessage(typeof msg === 'string' ? msg : '删除失败')
   }
 }
 
@@ -511,6 +558,7 @@ onMounted(() => {
             <div class="card-title">编辑信息</div>
             <van-form @submit="handleSave">
               <van-field v-model="form.name" name="name" label="名称" placeholder="请输入名称" />
+              <van-field v-model="form.code" name="code" label="编码" placeholder="请输入物料编码" />
               <van-field v-model="currentCategoryText" is-link readonly name="category" label="分类" placeholder="请选择分类"
                 @click="showCategoryPicker = true" />
               <van-field v-model="form.unit" is-link readonly name="unit" label="单位" placeholder="请选择单位"

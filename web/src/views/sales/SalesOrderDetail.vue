@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { previewImage } from '@/utils/image'
 import { showConfirmDialog } from 'vant'
 import {
   getSalesOrder,
@@ -8,12 +9,15 @@ import {
   updateSalesOrderItems,
   publishSalesOrder,
   confirmSalesOrderItem,
-  confirmExpress,
   completeSalesOrder,
-  cancelSalesOrder
+  cancelSalesOrder,
+  deleteSalesOrder,
+  getSalesOrderImages,
+  uploadSalesOrderImage,
+  deleteSalesOrderImage
 } from '@/api/sales'
 import { getMaterials } from '@/api/material'
-import type { SalesOrder } from '@/types/sales'
+import type { SalesOrder, SalesOrderImage, SalesOrderImageType } from '@/types/sales'
 import { showMessage, handleError } from '@/utils/request'
 
 const route = useRoute()
@@ -27,6 +31,23 @@ const products = ref<any[]>([])
 const showProductPicker = ref(false)
 const tempItems = ref<any[]>([])
 const materialSearchText = ref('')
+const orderImages = ref<SalesOrderImage[]>([])
+const productShippingImages = computed(() => orderImages.value.filter(i => i.image_type === 'product_shipping'))
+const logisticsImages = computed(() => orderImages.value.filter(i => i.image_type === 'logistics'))
+const uploadingType = ref<SalesOrderImageType | ''>('')
+const productImageInputRef = ref<HTMLInputElement | null>(null)
+const logisticsImageInputRef = ref<HTMLInputElement | null>(null)
+const productsCollapsed = ref(false)
+
+// 四步工作流状态
+const step1Done = computed(() => detail.value?.items?.every(i => i.is_confirmed) ?? false)
+const step2Done = computed(() => productShippingImages.value.length > 0)
+const step3Done = computed(() => logisticsImages.value.length > 0)
+const step4Ready = computed(() => step1Done.value && step2Done.value && step3Done.value)
+
+function toggleProducts() {
+  productsCollapsed.value = !productsCollapsed.value
+}
 
 const statusMap: Record<string, string> = {
   draft: '草稿',
@@ -43,11 +64,81 @@ async function fetchDetail() {
       data.customer_info = data.customer_name || data.customer_address || ''
     }
     detail.value = data
+    await fetchOrderImages()
   } catch (e) {
     const errorMessage = handleError(e)
     showMessage(errorMessage)
   } finally {
     loading.value = false
+  }
+}
+
+async function fetchOrderImages() {
+  if (!id) return
+  try {
+    orderImages.value = await getSalesOrderImages(id) as any
+  } catch (e) {
+    orderImages.value = []
+  }
+}
+
+async function handleUploadImage(imageType: SalesOrderImageType, event: Event) {
+  const input = event.target as HTMLInputElement
+  if (!input.files || !input.files.length) return
+
+  const file = input.files[0]
+  if (!file.type.startsWith('image/')) {
+    showMessage('请选择图片文件')
+    return
+  }
+
+  const sizeMB = (file.size / (1024 * 1024)).toFixed(2)
+  if (file.size > 5 * 1024 * 1024) {
+    await showConfirmDialog({
+      title: '图片太大',
+      message: `当前图片 ${sizeMB}MB，请选择小于 5MB 的图片`,
+      showCancelButton: false,
+      confirmButtonText: '知道了'
+    })
+    return
+  }
+
+  uploadingType.value = imageType
+  try {
+    await uploadSalesOrderImage(id, file, imageType)
+    showMessage('上传成功')
+    await fetchOrderImages()
+  } catch (e: any) {
+    await showConfirmDialog({
+      title: '上传失败',
+      message: e?.response?.data?.detail || '上传失败，请重试',
+      showCancelButton: false
+    })
+  } finally {
+    uploadingType.value = ''
+    input.value = ''
+  }
+}
+
+function triggerProductUpload() {
+  productImageInputRef.value?.click()
+}
+
+function triggerLogisticsUpload() {
+  logisticsImageInputRef.value?.click()
+}
+
+async function handleDeleteImage(imageId: string) {
+  await showConfirmDialog({
+    title: '确认删除',
+    message: '确定要删除这张图片吗？'
+  })
+  try {
+    await deleteSalesOrderImage(imageId)
+    showMessage('删除成功')
+    await fetchOrderImages()
+  } catch (e) {
+    // user cancelled
   }
 }
 
@@ -174,7 +265,7 @@ const filteredProducts = computed(() => {
 function onSearchMaterials() {}
 
 async function handlePublish() {
-  await showConfirmDialog({ title: '确认发布', message: '发布后将进入待处理状态，发货人员可进行物料分配' })
+  await showConfirmDialog({ title: '确认发布', message: '发布后将锁定库存并进入待处理状态' })
   actionLoading.value = 'publish'
   try {
     await publishSalesOrder(id)
@@ -192,21 +283,7 @@ async function handleConfirmItem(itemId: string) {
   actionLoading.value = itemId
   try {
     await confirmSalesOrderItem(id, itemId)
-    showMessage('已分配，库存已扣减')
-    fetchDetail()
-  } catch (e) {
-    const errorMessage = handleError(e)
-    showMessage(errorMessage)
-  } finally {
-    actionLoading.value = ''
-  }
-}
-
-async function handleConfirmExpress() {
-  actionLoading.value = 'express'
-  try {
-    await confirmExpress(id)
-    showMessage('物流单号已确认')
+    showMessage('已检查')
     fetchDetail()
   } catch (e) {
     const errorMessage = handleError(e)
@@ -232,12 +309,30 @@ async function handleComplete() {
 }
 
 async function handleCancel() {
-  await showConfirmDialog({ title: '确认取消', message: '确定要取消订单吗？已分配的库存将自动退回' })
+  await showConfirmDialog({ title: '确认取消', message: '确定要取消订单吗？已锁定的库存将自动退回' })
   actionLoading.value = 'cancel'
   try {
     await cancelSalesOrder(id)
     showMessage('订单已取消')
     fetchDetail()
+  } catch (e) {
+    const errorMessage = handleError(e)
+    showMessage(errorMessage)
+  } finally {
+    actionLoading.value = ''
+  }
+}
+
+async function handleDelete() {
+  await showConfirmDialog({
+    title: '确认删除',
+    message: '确定要删除这个草稿订单吗？此操作不可恢复。'
+  })
+  actionLoading.value = 'delete'
+  try {
+    await deleteSalesOrder(id)
+    showMessage('删除成功')
+    router.back()
   } catch (e) {
     const errorMessage = handleError(e)
     showMessage(errorMessage)
@@ -262,6 +357,30 @@ onMounted(() => {
     </van-nav-bar>
 
     <div v-if="detail" class="detail-content">
+
+      <!-- 工作流进度条 — 最顶部，仅 pending 状态 -->
+      <div v-if="detail.status === 'pending'" class="workflow-steps">
+        <div class="wf-step" :class="{ done: step1Done, active: !step1Done }">
+          <div class="wf-step-num">1</div>
+          <div class="wf-step-label">{{ step1Done ? '物料已检查' : '检查物料' }}</div>
+        </div>
+        <div class="wf-line" :class="{ done: step1Done }"></div>
+        <div class="wf-step" :class="{ done: step2Done, active: step1Done && !step2Done, locked: !step1Done }">
+          <div class="wf-step-num">2</div>
+          <div class="wf-step-label">{{ step2Done ? '产品图已上传' : '产品发货图' }}</div>
+        </div>
+        <div class="wf-line" :class="{ done: step2Done }"></div>
+        <div class="wf-step" :class="{ done: step3Done, active: step2Done && !step3Done, locked: !step2Done }">
+          <div class="wf-step-num">3</div>
+          <div class="wf-step-label">{{ step3Done ? '物流已确认' : '物流凭证图' }}</div>
+        </div>
+        <div class="wf-line" :class="{ done: step3Done }"></div>
+        <div class="wf-step" :class="{ done: false, active: step4Ready, locked: !step4Ready }">
+          <div class="wf-step-num">4</div>
+          <div class="wf-step-label">完成订单</div>
+        </div>
+      </div>
+
       <div class="detail-grid">
         <div class="card order-info-card">
           <div class="card-title">订单信息</div>
@@ -285,30 +404,6 @@ onMounted(() => {
               <span class="label">客户信息</span>
               <span class="value">{{ detail.customer_info || '-' }}</span>
             </div>
-            <div class="info-row">
-              <span class="label">物流单号</span>
-              <span class="value express-row">
-                <span>{{ detail.express_no || '-' }}</span>
-                <van-button
-                  v-if="detail.status === 'pending' && !detail.express_confirmed"
-                  size="small"
-                  :class="{ 'action-btn-shake': detail.items?.every(i => i.is_confirmed), 'action-btn-blue': true, 'action-btn-disabled': !detail.items?.every(i => i.is_confirmed) }"
-                  :disabled="!detail.items?.every(i => i.is_confirmed)"
-                  :loading="actionLoading === 'express'"
-                  @click="handleConfirmExpress"
-                >
-                  待确认
-                </van-button>
-                <van-button
-                  v-if="detail.status === 'pending' && detail.express_confirmed"
-                  size="small"
-                  class="action-btn-done"
-                  disabled
-                >
-                  已确认
-                </van-button>
-              </span>
-            </div>
             <div class="info-row total-amount">
               <span class="label">总金额</span>
               <span class="value price">¥{{ detail.total_amount }}</span>
@@ -317,13 +412,22 @@ onMounted(() => {
         </div>
 
         <div class="card products-card">
-          <div class="card-header">
-            <div class="card-title">物料列表</div>
+          <div class="card-header clickable" @click="toggleProducts">
+            <div class="card-title">
+              <van-icon
+                :name="productsCollapsed ? 'arrow' : 'arrow-down'"
+                size="14"
+                class="collapse-arrow"
+                :class="{ rotated: !productsCollapsed }"
+              />
+              物料列表
+            </div>
+            <span v-if="detail.status === 'pending' && step1Done" class="step-done-tag">已全部检查</span>
             <van-button
               v-if="detail.status === 'draft' && isEditing"
               size="small"
               type="primary"
-              @click="handleAddProduct"
+              @click.stop="handleAddProduct"
             >
               添加物料
             </van-button>
@@ -360,57 +464,173 @@ onMounted(() => {
           </template>
 
           <template v-else>
-            <div v-if="!detail.items || detail.items.length === 0" class="empty-text">
-              暂无物料{{ detail.status === 'draft' ? '，请在编辑模式下添加' : '' }}
-            </div>
-            <div v-else>
-              <div
-                v-for="item in detail.items"
-                :key="item.id"
-                class="product-item"
-              >
-                <img
-                  v-if="item.product?.thumbnail_url"
-                  class="product-thumb"
-                  :src="item.product.thumbnail_url"
-                  :alt="item.product?.name || item.product_name"
-                />
-                <div v-else class="product-thumb product-thumb-placeholder">
-                  <van-icon name="photo-o" size="20" />
-                </div>
-                <div class="product-info">
-                  <div class="product-name">{{ item.product?.name || item.product_name }}</div>
-                  <div class="product-meta">
-                    {{ item.quantity }} × ¥{{ item.unit_price }} = ¥{{ item.amount }}
+            <div v-show="!productsCollapsed">
+              <div v-if="!detail.items || detail.items.length === 0" class="empty-text">
+                暂无物料{{ detail.status === 'draft' ? '，请在编辑模式下添加' : '' }}
+              </div>
+              <div v-else>
+                <div
+                  v-for="item in detail.items"
+                  :key="item.id"
+                  class="product-item"
+                >
+                  <img
+                    v-if="item.product?.thumbnail_url"
+                    class="product-thumb"
+                    :src="item.product.thumbnail_url"
+                    :alt="item.product?.name || item.product_name"
+                    @click="previewImage(item.product.thumbnail_url)"
+                  />
+                  <div v-else class="product-thumb product-thumb-placeholder">
+                    <van-icon name="photo-o" size="20" />
                   </div>
-                </div>
-                <div class="product-action">
-                  <van-button
-                    v-if="detail.status === 'pending' && !item.is_confirmed"
-                    size="small"
-                    class="action-btn-shake action-btn-blue"
-                    :loading="actionLoading === item.id"
-                    @click="handleConfirmItem(item.id)"
-                  >
-                    待分配
-                  </van-button>
-                  <van-button
-                    v-else-if="item.is_confirmed"
-                    size="small"
-                    class="action-btn-done"
-                    disabled
-                  >
-                    已分配
-                  </van-button>
+                  <div class="product-info">
+                    <div class="product-name">{{ item.product?.name || item.product_name }}</div>
+                    <div class="product-meta">
+                      {{ item.quantity }} × ¥{{ item.unit_price }} = ¥{{ item.amount }}
+                    </div>
+                  </div>
+                  <div class="product-action">
+                    <van-button
+                      v-if="detail.status === 'pending' && !item.is_confirmed"
+                      size="small"
+                      class="action-btn-blue"
+                      :loading="actionLoading === item.id"
+                      @click="handleConfirmItem(item.id)"
+                    >
+                      <span class="pulse-dot"></span>
+                      待检查
+                    </van-button>
+                    <van-button
+                      v-else-if="item.is_confirmed"
+                      size="small"
+                      class="action-btn-done"
+                      disabled
+                    >
+                      已检查
+                    </van-button>
+                  </div>
                 </div>
               </div>
             </div>
           </template>
+
+          <!-- 产品发货图片 — 物料列表下方 -->
+          <div v-if="(detail.status === 'pending' && step1Done) || (detail.status === 'completed' && productShippingImages.length > 0)" class="product-shipping-section">
+            <div class="section-divider"></div>
+            <div class="image-upload-label">
+              <span>产品发货图片</span>
+              <span v-if="detail.status === 'pending' && step1Done && !step2Done" class="pulse-dot" style="position:static;"></span>
+              <span class="image-count">{{ productShippingImages.length > 0 ? '已上传' : '待上传' }}</span>
+            </div>
+            <div class="image-upload-row">
+              <div
+                v-for="img in productShippingImages"
+                :key="img.id"
+                class="uploaded-image-wrapper"
+              >
+                <img
+                  :src="img.image_url"
+                  class="uploaded-image"
+                  @click="previewImage(img.image_url)"
+                />
+                <van-icon
+                  v-if="detail.status === 'pending'"
+                  name="close"
+                  class="delete-image-icon"
+                  @click="handleDeleteImage(img.id)"
+                />
+              </div>
+              <div v-if="detail.status === 'pending'" class="upload-trigger" @click="triggerProductUpload">
+                <van-icon name="plus" size="24" color="#999" />
+                <span class="upload-text">上传</span>
+              </div>
+              <input
+                ref="productImageInputRef"
+                type="file"
+                accept="image/*"
+                style="display:none"
+                @change="handleUploadImage('product_shipping', $event)"
+              />
+            </div>
+          </div>
+        </div>
+
+        <!-- 物流单号 + 物流凭证图片 合并模块，仅 pending 状态 -->
+        <div v-if="detail.status === 'pending'" class="card logistics-card" :class="{ 'full-width': true }">
+          <div class="card-title">物流信息</div>
+          <div class="info-row">
+            <span class="label">物流单号</span>
+            <span class="value">{{ detail.express_no || '-' }}</span>
+          </div>
+
+          <!-- 物流凭证图片 — step2（产品图上传）完成后解锁 -->
+          <div v-if="step2Done" class="logistics-image-section">
+            <div class="section-divider"></div>
+            <div class="image-upload-label">
+              <span>物流凭证图片</span>
+              <span v-if="!step3Done && logisticsImages.length === 0" class="pulse-dot" style="position:static;"></span>
+              <span class="image-count">{{ logisticsImages.length > 0 ? '已上传 · 物流已确认' : '待上传' }}</span>
+            </div>
+            <div class="image-upload-row">
+              <div
+                v-for="img in logisticsImages"
+                :key="img.id"
+                class="uploaded-image-wrapper"
+              >
+                <img
+                  :src="img.image_url"
+                  class="uploaded-image"
+                  @click="previewImage(img.image_url)"
+                />
+                <van-icon
+                  name="close"
+                  class="delete-image-icon"
+                  @click="handleDeleteImage(img.id)"
+                />
+              </div>
+              <div class="upload-trigger" @click="triggerLogisticsUpload">
+                <van-icon name="plus" size="24" color="#999" />
+                <span class="upload-text">上传</span>
+              </div>
+              <input
+                ref="logisticsImageInputRef"
+                type="file"
+                accept="image/*"
+                style="display:none"
+                @change="handleUploadImage('logistics', $event)"
+              />
+            </div>
+          </div>
         </div>
 
         <div v-if="detail.remark && !isEditing" class="card remark-card full-width">
           <div class="card-title">备注</div>
           <div class="description">{{ detail.remark }}</div>
+        </div>
+
+        <!-- 物流信息 合并模块，仅 completed 状态 -->
+        <div v-if="detail.status === 'completed' && (detail.express_no || logisticsImages.length > 0)" class="card logistics-card" :class="{ 'full-width': true }">
+          <div class="card-title">物流信息</div>
+          <div class="info-row">
+            <span class="label">物流单号</span>
+            <span class="value">{{ detail.express_no || '-' }}</span>
+          </div>
+          <div v-if="logisticsImages.length > 0" class="logistics-image-section">
+            <div class="section-divider"></div>
+            <div class="image-upload-label">
+              <span>物流凭证图片</span>
+            </div>
+            <div class="image-upload-row">
+              <img
+                v-for="img in logisticsImages"
+                :key="img.id"
+                :src="img.image_url"
+                class="uploaded-image"
+                @click="previewImage(img.image_url)"
+              />
+            </div>
+          </div>
         </div>
       </div>
 
@@ -428,27 +648,40 @@ onMounted(() => {
               发布订单
             </van-button>
           </div>
+          <div v-if="detail.status === 'draft'" class="action-btns">
+            <van-button
+              type="danger"
+              plain
+              block
+              :loading="actionLoading === 'delete'"
+              @click="handleDelete"
+            >
+              删除订单
+            </van-button>
+          </div>
 
           <template v-if="detail.status === 'pending'">
+
             <div class="action-btns">
               <van-button
-                v-if="detail.items?.every(i => i.is_confirmed) && detail.express_confirmed"
+                v-if="step4Ready"
                 size="large"
-                class="action-btn-shake action-btn-blue action-block"
+                class="action-btn-blue action-block"
                 round
                 :loading="actionLoading === 'complete'"
                 @click="handleComplete"
               >
+                <span class="pulse-dot"></span>
                 完成订单
               </van-button>
               <van-button
-                v-if="!detail.items?.every(i => i.is_confirmed) || !detail.express_confirmed"
+                v-else
                 size="large"
                 class="action-btn-disabled action-block"
                 round
                 disabled
               >
-                {{ !detail.items?.every(i => i.is_confirmed) ? '等待分配所有物料' : '等待确认物流' }}
+                {{ !step1Done ? '步骤① 请先检查所有物料' : !step2Done ? '步骤② 请上传产品发货图' : '步骤③ 请上传物流凭证图' }}
               </van-button>
             </div>
             <div class="action-btns">
@@ -741,13 +974,258 @@ onMounted(() => {
   cursor: not-allowed;
 }
 
-@keyframes shake {
-  0%, 100% { transform: translateX(0); }
-  15%, 45%, 75% { transform: translateX(-3px); }
-  30%, 60%, 90% { transform: translateX(3px); }
+@keyframes pulse-dot-keyframes {
+  0%, 100% { transform: scale(0.8); opacity: 0.6; }
+  50% { transform: scale(1.4); opacity: 1; }
 }
 
-.action-btn-shake {
-  animation: shake 2s ease-in-out infinite;
+.pulse-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #1890ff;
+  animation: pulse-dot-keyframes 1.2s ease-in-out infinite;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+@keyframes collapse-rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(180deg); }
+}
+
+.collapse-arrow {
+  transition: transform 0.3s ease;
+  margin-right: 4px;
+}
+
+.collapse-arrow.rotated {
+  transform: rotate(180deg);
+}
+
+.clickable {
+  cursor: pointer;
+}
+
+.step-done-tag {
+  font-size: 12px;
+  color: #07c160;
+  font-weight: 500;
+  background: #e8f8e8;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.express-done-tag {
+  font-size: 12px;
+  color: #07c160;
+  font-weight: 500;
+  background: #e8f8e8;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.workflow-steps {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  margin-bottom: 16px;
+  padding: 12px 12px;
+  background: #fff;
+  border-radius: 8px;
+}
+
+.wf-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.wf-step-num {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 600;
+  background: #eee;
+  color: #999;
+  transition: all 0.3s ease;
+}
+
+.wf-step.active .wf-step-num {
+  background: #1890ff;
+  color: #fff;
+  box-shadow: 0 0 0 4px rgba(24,144,255,0.2);
+}
+
+.wf-step.done .wf-step-num {
+  background: #07c160;
+  color: #fff;
+}
+
+.wf-step.locked .wf-step-num {
+  background: #f0f0f0;
+  color: #ccc;
+}
+
+.wf-step-label {
+  font-size: 11px;
+  color: #999;
+  white-space: nowrap;
+}
+
+.wf-step.active .wf-step-label {
+  color: #1890ff;
+  font-weight: 500;
+}
+
+.wf-step.done .wf-step-label {
+  color: #07c160;
+}
+
+.wf-line {
+  flex: 1;
+  height: 2px;
+  background: #eee;
+  margin: 0 4px;
+  margin-bottom: 22px;
+  transition: background 0.3s ease;
+}
+
+.wf-line.done {
+  background: #07c160;
+}
+
+.locked-card {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.locked-text {
+  color: #999;
+  font-size: 13px;
+  text-align: center;
+  padding: 16px 0;
+}
+
+.section-divider {
+  border-top: 1px solid #f0f0f0;
+  margin: 12px 0;
+}
+
+.product-shipping-section,
+.logistics-image-section {
+  margin-top: 4px;
+}
+
+.product-shipping-section .image-upload-label,
+.logistics-image-section .image-upload-label {
+  margin-bottom: 10px;
+}
+
+.product-shipping-section .upload-trigger,
+.logistics-image-section .upload-trigger {
+  width: 72px;
+  height: 72px;
+}
+
+.product-shipping-section .uploaded-image,
+.logistics-image-section .uploaded-image {
+  width: 72px;
+  height: 72px;
+}
+
+.logistics-card {
+  margin-bottom: 0;
+}
+
+.images-card {
+  margin-bottom: 12px;
+}
+
+.image-upload-section {
+  margin-bottom: 16px;
+}
+
+.image-upload-section:last-child {
+  margin-bottom: 0;
+}
+
+.image-upload-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  font-size: 14px;
+  color: #333;
+  font-weight: 500;
+}
+
+.image-count {
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.image-upload-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.uploaded-image-wrapper {
+  position: relative;
+  display: inline-flex;
+}
+
+.uploaded-image {
+  width: 80px;
+  height: 80px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid #eee;
+  cursor: pointer;
+}
+
+.delete-image-icon {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  background: #ff4d4f;
+  color: #fff;
+  border-radius: 50%;
+  padding: 2px;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.upload-trigger {
+  width: 80px;
+  height: 80px;
+  border: 1px dashed #ccc;
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  background: #fafafa;
+  transition: border-color 0.2s;
+}
+
+.upload-trigger:active {
+  border-color: #1890ff;
+}
+
+.upload-text {
+  font-size: 11px;
+  color: #999;
+  margin-top: 4px;
 }
 </style>

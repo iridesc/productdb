@@ -13,10 +13,8 @@ const keyword = ref('')
 const showLowStock = ref(false)
 
 const categoryMap: Record<string, string> = {
-  finished_product: '成品',
-  semi_finished: '半成品',
-  raw_material: '原材料',
-  auxiliary: '辅料'
+  product: '产品',
+  component: '部件'
 }
 
 async function fetchList() {

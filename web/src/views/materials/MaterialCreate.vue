@@ -12,7 +12,7 @@ const showUnitPicker = ref(false)
 const form = ref({
   code: '',
   name: '',
-  category: 'finished_product' as const,
+  category: 'product' as const,
   unit: '个',
   safety_stock: 1,
   price: 0,
@@ -20,10 +20,8 @@ const form = ref({
 })
 
 const categoryOptions = [
-  { text: '成品', value: 'finished_product' },
-  { text: '半成品', value: 'semi_finished' },
-  { text: '原材料', value: 'raw_material' },
-  { text: '辅料', value: 'auxiliary' }
+  { text: '产品', value: 'product' },
+  { text: '部件', value: 'component' }
 ]
 
 const unitOptions = [

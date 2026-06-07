@@ -1,5 +1,5 @@
 import request from '@/utils/request'
-import type { SalesOrder, SalesOrderCreate } from '@/types/sales'
+import type { SalesOrder, SalesOrderCreate, SalesOrderImage, SalesOrderImageType } from '@/types/sales'
 
 // 销售订单列表
 export function getSalesOrders(params: {
@@ -40,11 +40,6 @@ export function confirmSalesOrderItem(orderId: string, itemId: string) {
   return request.put<any>(`/sales-orders/${orderId}/items/${itemId}/confirm`, {})
 }
 
-// 确认快递单号
-export function confirmExpress(orderId: string) {
-  return request.put<any>(`/sales-orders/${orderId}/confirm-express`, {})
-}
-
 // 完成订单
 export function completeSalesOrder(id: string) {
   return request.put<any>(`/sales-orders/${id}/complete`, {})
@@ -58,4 +53,26 @@ export function cancelSalesOrder(id: string) {
 // 删除订单
 export function deleteSalesOrder(id: string) {
   return request.delete(`/sales-orders/${id}`)
+}
+
+// 上传销售订单凭证图片
+export function uploadSalesOrderImage(orderId: string, file: File, imageType: SalesOrderImageType) {
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('image_type', imageType)
+
+  return request.post<SalesOrderImage>(`/sales-orders/${orderId}/images`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 30000,
+  })
+}
+
+// 获取销售订单凭证图片
+export function getSalesOrderImages(orderId: string) {
+  return request.get<SalesOrderImage[]>(`/sales-orders/${orderId}/images`)
+}
+
+// 删除销售订单凭证图片
+export function deleteSalesOrderImage(imageId: string) {
+  return request.delete(`/sales-orders/images/${imageId}`)
 }

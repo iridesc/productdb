@@ -1,5 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy.orm import Session
+import os
+import uuid as uuid_lib
+
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form
+from sqlalchemy.orm import Session, selectinload
 from typing import Optional, List
 from uuid import UUID
 from datetime import date, datetime
@@ -7,17 +10,25 @@ import random
 
 from app.database import get_db
 from app.models import (
-    ProductionOrder, ProductionOrderItem, ProductionOrderStatusEnum,
-    SalesOrder, Material, BOM, User,
+    ProductionOrder, ProductionOrderImage, ProductionOrderItem, ProductionOrderStatusEnum,
+    SalesOrder, Material, BOM, User, MaterialImage,
     InventoryTransaction, InventoryTransactionTypeEnum,
 )
 from app.schemas import (
-    ProductionOrderCreate, ProductionOrderUpdate, ProductionOrderResponse,
-    ProductionOrderListResponse
+    ProductionOrderCreate, ProductionOrderImageResponse, ProductionOrderUpdate,
+    ProductionOrderResponse, ProductionOrderListResponse, YieldUpdate,
 )
 from app.utils.auth import get_current_active_user, require_roles
 
 router = APIRouter(prefix="/production-orders", tags=["生产订单"])
+
+UPLOAD_DIR = "/app/uploads/images"
+ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+MAX_FILE_SIZE = 5 * 1024 * 1024
+
+
+def ensure_upload_dir():
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
 def generate_production_no(db: Session) -> str:
@@ -44,7 +55,10 @@ def get_production_orders(
     current_user: User = Depends(get_current_active_user)
 ):
     """获取生产订单列表（按角色过滤）"""
-    query = db.query(ProductionOrder)
+    query = db.query(ProductionOrder).options(
+        selectinload(ProductionOrder.product).selectinload(Material.images),
+        selectinload(ProductionOrder.items).selectinload(ProductionOrderItem.material).selectinload(Material.images)
+    )
 
     # 角色过滤：纯工人只能看到 pending + in_production
     role_codes = _get_user_role_codes(current_user)
@@ -85,6 +99,13 @@ def create_production_order(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="产品不存在"
+        )
+
+    # 校验生产数量不超过1000
+    if order_data.quantity > 1000:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"生产数量不得超过1000，当前数量: {order_data.quantity}"
         )
 
     # 如果有关联销售订单，检查是否存在
@@ -142,7 +163,11 @@ def get_production_order(
     current_user: User = Depends(get_current_active_user)
 ):
     """获取生产订单详情"""
-    order = db.query(ProductionOrder).filter(ProductionOrder.id == order_id).first()
+    order = db.query(ProductionOrder).options(
+        selectinload(ProductionOrder.product).selectinload(Material.images),
+        selectinload(ProductionOrder.items).selectinload(ProductionOrderItem.material).selectinload(Material.images),
+        selectinload(ProductionOrder.images),
+    ).filter(ProductionOrder.id == order_id).first()
     if not order:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -323,7 +348,10 @@ def complete_production_order(
     current_user: User = Depends(require_roles("worker", "admin")),
 ):
     """报工完成：成品入库（生产中 → 已完成）"""
-    order = db.query(ProductionOrder).filter(ProductionOrder.id == order_id).first()
+    order = db.query(ProductionOrder).options(
+        selectinload(ProductionOrder.items),
+        selectinload(ProductionOrder.images),
+    ).filter(ProductionOrder.id == order_id).first()
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="生产订单不存在")
 
@@ -332,18 +360,40 @@ def complete_production_order(
             status_code=status.HTTP_400_BAD_REQUEST, detail="只有生产中的订单可以报工完成"
         )
 
+    # 检查所有物料已分配
+    unchecked = [item for item in order.items if item.consumed_quantity == 0]
+    if unchecked:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"还有 {len(unchecked)} 个物料未检查，请先完成物料检查",
+        )
+
+    # 检查产出数量已确认
+    if order.completed_quantity is None or order.completed_quantity <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="请先确认产出数量",
+        )
+
+    # 检查产品图已上传
+    if not order.images or len(order.images) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="请先上传产品图片",
+        )
+
     # 成品入库
     product = db.query(Material).filter(Material.id == order.product_id).first()
     if not product:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="产品不存在")
 
     before_stock = product.current_stock
-    product.current_stock += order.quantity
+    product.current_stock += order.completed_quantity
 
     transaction = InventoryTransaction(
         material_id=product.id,
         transaction_type=InventoryTransactionTypeEnum.PRODUCTION_IN,
-        quantity=order.quantity,
+        quantity=order.completed_quantity,
         before_quantity=before_stock,
         after_quantity=product.current_stock,
         reference_type="production_order",
@@ -353,7 +403,6 @@ def complete_production_order(
     )
     db.add(transaction)
 
-    order.completed_quantity = order.quantity
     order.status = ProductionOrderStatusEnum.COMPLETED
     db.commit()
     db.refresh(order)
@@ -437,3 +486,188 @@ def get_required_materials(
         })
 
     return result
+
+
+@router.put("/{order_id}/yield", response_model=ProductionOrderResponse)
+def set_production_yield(
+    order_id: UUID,
+    yield_data: YieldUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """确认生产产出数量"""
+    order = db.query(ProductionOrder).filter(ProductionOrder.id == order_id).first()
+    if not order:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="生产订单不存在"
+        )
+
+    if order.status != ProductionOrderStatusEnum.IN_PRODUCTION:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="只有生产中的订单可以确认产出"
+        )
+
+    if yield_data.completed_quantity > order.quantity:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"产出数量不得超过计划数量 {order.quantity}"
+        )
+
+    order.completed_quantity = yield_data.completed_quantity
+    db.commit()
+    db.refresh(order)
+    return order
+
+
+@router.post("/{order_id}/images", response_model=ProductionOrderImageResponse, status_code=status.HTTP_201_CREATED)
+async def upload_production_order_image(
+    order_id: UUID,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """上传生产订单产品图（仅生产中状态）"""
+    order = db.query(ProductionOrder).filter(ProductionOrder.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="订单不存在")
+
+    if order.status != ProductionOrderStatusEnum.IN_PRODUCTION:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="只有生产中的订单可以上传图片"
+        )
+
+    filename = file.filename or ""
+    ext = os.path.splitext(filename)[1].lower()
+
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"不支持的文件格式，支持: {', '.join(ALLOWED_EXTENSIONS)}"
+        )
+
+    content = await file.read()
+    if len(content) > MAX_FILE_SIZE:
+        size_mb = len(content) / (1024 * 1024)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"图片太大({size_mb:.1f}MB)，请压缩到5MB以内"
+        )
+
+    ensure_upload_dir()
+
+    unique_filename = f"{uuid_lib.uuid4().hex}{ext}"
+    filepath = os.path.join(UPLOAD_DIR, unique_filename)
+
+    with open(filepath, "wb") as f:
+        f.write(content)
+
+    max_sort = (
+        db.query(ProductionOrderImage.sort_order)
+        .filter(ProductionOrderImage.order_id == order_id)
+        .order_by(ProductionOrderImage.sort_order.desc())
+        .first()
+    )
+    next_sort = (max_sort[0] + 1) if max_sort else 0
+
+    image = ProductionOrderImage(
+        order_id=order_id,
+        image_type="product_shipping",
+        image_url=f"/api/v1/uploads/{unique_filename}",
+        sort_order=next_sort,
+    )
+    db.add(image)
+    db.commit()
+    db.refresh(image)
+
+    return image
+
+
+@router.get("/{order_id}/images", response_model=List[ProductionOrderImageResponse])
+def get_production_order_images(
+    order_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """获取生产订单产品图列表"""
+    order = db.query(ProductionOrder).filter(ProductionOrder.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="订单不存在")
+
+    images = (
+        db.query(ProductionOrderImage)
+        .filter(ProductionOrderImage.order_id == order_id)
+        .order_by(ProductionOrderImage.sort_order)
+        .all()
+    )
+    return images
+
+
+@router.delete("/images/{image_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_production_order_image(
+    image_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """删除产品图"""
+    image = db.query(ProductionOrderImage).filter(ProductionOrderImage.id == image_id).first()
+    if not image:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="图片不存在")
+
+    try:
+        filename = os.path.basename(image.image_url)
+        filepath = os.path.join(UPLOAD_DIR, filename)
+        if os.path.exists(filepath):
+            os.remove(filepath)
+    except Exception:
+        pass
+
+    db.delete(image)
+    db.commit()
+
+    return None
+
+
+@router.put("/{order_id}/items/{item_id}/distribute", response_model=ProductionOrderResponse)
+def distribute_production_item(
+    order_id: UUID,
+    item_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """标记物料已分配（库存已在开工时扣减，此处仅记录消耗进度）"""
+    order = db.query(ProductionOrder).filter(ProductionOrder.id == order_id).first()
+    if not order:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="生产订单不存在"
+        )
+
+    if order.status != ProductionOrderStatusEnum.IN_PRODUCTION:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="只有生产中的订单可以分配物料"
+        )
+
+    item = db.query(ProductionOrderItem).filter(
+        ProductionOrderItem.id == item_id,
+        ProductionOrderItem.production_order_id == order_id,
+    ).first()
+    if not item:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="生产订单物料不存在"
+        )
+
+    remaining = item.quantity - item.consumed_quantity
+    if remaining <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="该物料已全部分配"
+        )
+
+    item.consumed_quantity = item.quantity
+    db.commit()
+    db.refresh(order)
+    return order

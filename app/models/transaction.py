@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Text, Boolean, DateTime, Numeric, Enum, ForeignKey, Date
+from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, Numeric, Enum, ForeignKey, Date
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -61,13 +61,14 @@ class SalesOrder(Base):
     order_date = Column(Date, nullable=False)
     delivery_date = Column(Date, nullable=True)
     status = Column(Enum(SalesOrderStatusEnum), default=SalesOrderStatusEnum.DRAFT)
-    total_amount = Column(Numeric(12, 2), default=0)
+    total_amount = Column(Numeric(15, 2), default=0)
     remark = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     customer = relationship("Customer", back_populates="sales_orders")
     items = relationship("SalesOrderItem", back_populates="order", cascade="all, delete-orphan")
+    images = relationship("SalesOrderImage", back_populates="order", cascade="all, delete-orphan")
     production_orders = relationship("ProductionOrder", back_populates="sales_order")
 
 
@@ -79,12 +80,34 @@ class SalesOrderItem(Base):
     product_id = Column(UUID(as_uuid=True), ForeignKey("materials.id"), nullable=False)
     quantity = Column(Numeric(10, 2), nullable=False)
     unit_price = Column(Numeric(10, 2), nullable=False)
-    amount = Column(Numeric(12, 2), nullable=False)
+    amount = Column(Numeric(15, 2), nullable=False)
     is_confirmed = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     order = relationship("SalesOrder", back_populates="items")
     product = relationship("Material")
+
+
+class SalesOrderImageType(str, enum.Enum):
+    PRODUCT_SHIPPING = "product_shipping"  # 产品发货图片
+    LOGISTICS = "logistics"  # 物流凭证图片
+
+
+class SalesOrderImage(Base):
+    __tablename__ = "sales_order_images"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    order_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("sales_orders.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    image_type = Column(Enum(SalesOrderImageType), nullable=False)
+    image_url = Column(String(500), nullable=False)
+    sort_order = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    order = relationship("SalesOrder", back_populates="images")
 
 
 class ProductionOrderStatusEnum(str, enum.Enum):
@@ -114,6 +137,7 @@ class ProductionOrder(Base):
     sales_order = relationship("SalesOrder", back_populates="production_orders")
     product = relationship("Material")
     items = relationship("ProductionOrderItem", back_populates="production_order", cascade="all, delete-orphan")
+    images = relationship("ProductionOrderImage", back_populates="order", cascade="all, delete-orphan")
 
 
 class ProductionOrderItem(Base):
@@ -128,6 +152,23 @@ class ProductionOrderItem(Base):
 
     production_order = relationship("ProductionOrder", back_populates="items")
     material = relationship("Material")
+
+
+class ProductionOrderImage(Base):
+    __tablename__ = "production_order_images"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    order_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("production_orders.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    image_type = Column(String(50), nullable=False, default="product_shipping")
+    image_url = Column(String(500), nullable=False)
+    sort_order = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    order = relationship("ProductionOrder", back_populates="images")
 
 
 class InventoryTransactionTypeEnum(str, enum.Enum):
@@ -182,11 +223,15 @@ class User(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     username = Column(String(50), unique=True, nullable=False, index=True)
-    email = Column(String(100), unique=True, nullable=False)
     hashed_password = Column(String(200), nullable=False)
-    full_name = Column(String(100), nullable=True)
     is_active = Column(Boolean, default=True)
     is_superuser = Column(Boolean, default=False)
+    can_view_dashboard = Column(Boolean, default=True)
+    can_manage_materials = Column(Boolean, default=True)
+    can_manage_sales = Column(Boolean, default=True)
+    can_manage_production = Column(Boolean, default=True)
+    can_manage_inventory = Column(Boolean, default=True)
+    can_manage_users = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

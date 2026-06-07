@@ -3,6 +3,19 @@ import type { ID, DateTime, DateType } from './common'
 // 销售订单状态
 export type SalesOrderStatus = 'draft' | 'pending' | 'completed' | 'cancelled'
 
+// 销售订单凭证图片类型
+export type SalesOrderImageType = 'product_shipping' | 'logistics'
+
+// 销售订单凭证图片
+export interface SalesOrderImage {
+  id: ID
+  order_id: ID
+  image_type: SalesOrderImageType
+  image_url: string
+  sort_order: number
+  created_at: DateTime
+}
+
 // 销售订单
 export interface SalesOrder {
   id: ID
@@ -16,6 +29,7 @@ export interface SalesOrder {
   total_amount: number
   remark?: string
   items: SalesOrderItem[]
+  images: SalesOrderImage[]
   created_at: DateTime
   updated_at: DateTime
 }
