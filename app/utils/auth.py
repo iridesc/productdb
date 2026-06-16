@@ -65,7 +65,8 @@ def get_current_active_user(current_user: User = Depends(get_current_user)) -> U
 
 
 def require_roles(*role_codes: str):
-    """要求用户至少拥有指定角色之一（admin 角色自动通过）"""
+    """[已废弃] 请使用 require_permissions
+    要求用户至少拥有指定角色之一（admin 角色自动通过）"""
 
     async def role_checker(
         current_user: User = Depends(get_current_active_user),
@@ -78,3 +79,25 @@ def require_roles(*role_codes: str):
         return current_user
 
     return role_checker
+
+
+def require_permissions(*permissions: str):
+    """基于 Boolean 权限标签检查（超级管理员自动通过）
+
+    permissions 对应 User 模型的 Boolean 字段：
+    can_manage_production / can_create_production / can_manage_sales / can_create_sales
+    can_manage_materials / can_manage_users / is_superuser
+    """
+
+    async def permission_checker(
+        current_user: User = Depends(get_current_active_user),
+    ) -> User:
+        if current_user.is_superuser:
+            return current_user
+        for perm in permissions:
+            if getattr(current_user, perm, False):
+                return current_user
+        raise HTTPException(status_code=403, detail="权限不足")
+        return current_user  # unreachable
+
+    return permission_checker

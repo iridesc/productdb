@@ -5,6 +5,7 @@ import { showMessage } from '@/utils/request'
 import { getProductionOrders } from '@/api/production'
 import type { ProductionOrder } from '@/types/production'
 import { handleError } from '@/utils/request'
+import { previewImage } from '@/utils/image'
 import { useUserStore } from '@/store/user'
 
 const router = useRouter()
@@ -12,9 +13,9 @@ const userStore = useUserStore()
 const loading = ref(false)
 const list = ref<ProductionOrder[]>([])
 const pagination = ref({ page: 1, page_size: 20, total: 0 })
-const activeStatus = ref<string>('')
 
-const isOperator = computed(() => userStore.isOperator())
+const canManageProduction = computed(() => userStore.hasPermission('can_manage_production'))
+const canCreate = computed(() => userStore.hasPermission('can_create_production'))
 
 const statusMap: Record<string, string> = {
   draft: '草稿',
@@ -39,9 +40,6 @@ async function fetchList() {
       page: pagination.value.page,
       page_size: pagination.value.page_size
     }
-    if (activeStatus.value) {
-      params.status = activeStatus.value
-    }
     const res: any = await getProductionOrders(params)
     list.value = res.items
     pagination.value.total = res.total
@@ -61,11 +59,6 @@ function goDetail(id: string) {
   router.push(`/production-orders/${id}`)
 }
 
-function filterByStatus(status: string) {
-  activeStatus.value = activeStatus.value === status ? '' : status
-  fetchList()
-}
-
 onMounted(() => {
   fetchList()
 })
@@ -73,26 +66,12 @@ onMounted(() => {
 
 <template>
   <div class="production-page">
+    <template v-if="canManageProduction">
     <van-nav-bar title="生产订单" left-arrow @click-left="router.back()">
       <template #right>
-        <van-icon v-if="isOperator" name="plus" size="18" @click="goCreate" />
+        <van-icon v-if="canCreate" name="plus" size="18" @click="goCreate" />
       </template>
     </van-nav-bar>
-
-    <!-- 状态筛选 -->
-    <div class="status-filters">
-      <van-tag
-        v-for="s in ['draft', 'pending', 'in_production', 'completed', 'cancelled']"
-        :key="s"
-        :type="activeStatus === s ? 'primary' : 'default'"
-        :color="activeStatus === s ? statusColor[s] : undefined"
-        size="large"
-        style="margin-right: 8px; cursor: pointer"
-        @click="filterByStatus(s)"
-      >
-        {{ statusMap[s] }}
-      </van-tag>
-    </div>
 
     <div class="table-container">
       <van-pull-refresh v-model="loading" @refresh="fetchList">
@@ -102,9 +81,11 @@ onMounted(() => {
               <tr>
                 <th>订单号</th>
                 <th>状态</th>
+                <th>产品图片</th>
                 <th>产品名称</th>
                 <th>数量</th>
                 <th>物料种类</th>
+                <th>备注</th>
                 <th>创建时间</th>
               </tr>
             </thead>
@@ -117,9 +98,19 @@ onMounted(() => {
                     {{ statusMap[item.status] || item.status }}
                   </span>
                 </td>
-                <td>{{ item.product_name }}</td>
-                <td class="center-cell">{{ item.quantity }}</td>
+                <td class="product-img-cell">
+                  <img
+                    v-if="item.product?.thumbnail_url"
+                    :src="item.product.thumbnail_url"
+                    class="product-thumb"
+                    @click.stop="previewImage(item.product.thumbnail_url)"
+                  />
+                  <span v-else class="no-img">—</span>
+                </td>
+                <td>{{ item.product?.name || '—' }}</td>
+                <td class="center-cell">{{ Number(item.quantity) }}</td>
                 <td class="center-cell">{{ item.items?.length || 0 }} 种</td>
+                <td class="remark-cell">{{ item.remark || '—' }}</td>
                 <td>{{ item.created_at?.slice(0, 10) }}</td>
               </tr>
             </tbody>
@@ -128,7 +119,19 @@ onMounted(() => {
           <van-empty v-if="!loading && list.length === 0" description="暂无订单" />
         </div>
       </van-pull-refresh>
+      <van-pagination
+        v-if="pagination.total > pagination.page_size"
+        v-model="pagination.page"
+        :total-items="pagination.total"
+        :items-per-page="pagination.page_size"
+        @change="fetchList"
+      />
+      <div v-if="pagination.total > pagination.page_size" style="text-align:center;color:#999;font-size:12px;padding:8px">
+        共 {{ pagination.total }} 条
+      </div>
     </div>
+    </template>
+    <van-empty v-else description="暂无权限，请联系管理员" />
   </div>
 </template>
 
@@ -136,13 +139,6 @@ onMounted(() => {
 .production-page {
   min-height: 100vh;
   background: #f5f5f5;
-}
-
-.status-filters {
-  padding: 12px 16px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
 }
 
 .table-container {
@@ -201,7 +197,7 @@ onMounted(() => {
 }
 
 .center-cell {
-  text-align: center;
+  text-align: left;
 }
 
 .status-tag {
@@ -209,5 +205,33 @@ onMounted(() => {
   font-size: 12px;
   padding: 3px 10px;
   border-radius: 4px;
+}
+
+.product-img-cell {
+  text-align: left;
+}
+
+.product-thumb {
+  width: 36px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid #eee;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.no-img {
+  color: #ccc;
+  font-size: 12px;
+}
+
+.remark-cell {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #999;
+  font-size: 12px;
 }
 </style>

@@ -45,9 +45,11 @@ export function completeSalesOrder(id: string) {
   return request.put<any>(`/sales-orders/${id}/complete`, {})
 }
 
-// 取消订单
-export function cancelSalesOrder(id: string) {
-  return request.put<any>(`/sales-orders/${id}/cancel`, {})
+// 取消订单（仅管理员，可选退回库存）
+export function cancelSalesOrder(id: string, returnInventory: boolean = true) {
+  return request.put<any>(`/sales-orders/${id}/cancel`, null, {
+    params: { return_inventory: returnInventory }
+  })
 }
 
 // 删除订单

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from typing import Optional, List
 from uuid import UUID
 
@@ -36,7 +36,14 @@ def get_product_bom(
     current_user: User = Depends(get_current_active_user),
 ):
     """获取产品的BOM（包含物料详情）"""
-    boms = db.query(BOM).filter(BOM.product_id == product_id).all()
+    boms = (
+        db.query(BOM)
+        .options(
+            selectinload(BOM.material).selectinload(Material.images),
+        )
+        .filter(BOM.product_id == product_id)
+        .all()
+    )
 
     result = []
     for bom in boms:
@@ -53,6 +60,7 @@ def get_product_bom(
                 scrap_rate=bom.scrap_rate,
                 is_optional=bom.is_optional,
                 note=bom.note,
+                thumbnail_url=bom.material.thumbnail_url,
             )
         )
 

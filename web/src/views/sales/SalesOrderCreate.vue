@@ -6,14 +6,16 @@ import { showMessage } from '@/utils/request'
 import { createSalesOrder } from '@/api/sales'
 import { handleError } from '@/utils/request'
 import ProductSelector from '@/components/ProductSelector.vue'
+import { useUserStore } from '@/store/user'
 
 const router = useRouter()
+const userStore = useUserStore()
+const hasPermission = computed(() => userStore.hasPermission('can_create_sales'))
 const loading = ref(false)
 
 // 表单数据
 const form = ref({
-  customer_name: '',
-  customer_address: '',
+  customer_info: '',
   express_no: '',
   remark: '',
   items: [] as any[],
@@ -59,16 +61,15 @@ const totalAmount = computed(() => {
 
 // 提交
 async function handleSubmit() {
-  if (!form.value.customer_address) {
-    showMessage('请填写客户地址（必填）')
+  if (!form.value.customer_info) {
+    showMessage('请填写客户信息（必填）')
     return
   }
 
   loading.value = true
   try {
     const data = {
-      customer_name: form.value.customer_name || undefined,
-      customer_address: form.value.customer_address || undefined,
+      customer_info: form.value.customer_info || undefined,
       express_no: form.value.express_no || undefined,
       remark: form.value.remark || undefined,
       items: form.value.items.length > 0 ? form.value.items : undefined,
@@ -88,13 +89,13 @@ async function handleSubmit() {
 
 <template>
   <div class="create-page">
+    <template v-if="hasPermission">
     <van-nav-bar title="创建销售订单" left-arrow @click-left="router.back()" />
 
     <van-form @submit="handleSubmit">
       <!-- 客户信息 -->
       <van-cell-group inset title="客户信息">
-        <van-field v-model="form.customer_name" label="客户名称" placeholder="请输入（选填）" />
-        <van-field v-model="form.customer_address" label="客户地址" placeholder="请输入（必填）" required />
+        <van-field v-model="form.customer_info" label="客户信息" type="textarea" rows="3" placeholder="请输入客户名称、地址、电话等收货信息（必填）" required />
       </van-cell-group>
 
       <!-- 快递信息 -->
@@ -148,9 +149,11 @@ async function handleSubmit() {
 
     <!-- 商品选择器（带搜索） -->
     <ProductSelector
-      v-model:show="showProductPicker"
+      v-model="showProductPicker"
       @select="addProduct"
     />
+    </template>
+    <van-empty v-else description="暂无权限，请联系管理员" />
   </div>
 </template>
 

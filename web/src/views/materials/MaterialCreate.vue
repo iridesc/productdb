@@ -3,8 +3,11 @@ import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { showMessage } from '@/utils/request'
 import { createMaterial } from '@/api/material'
+import { useUserStore } from '@/store/user'
 
 const router = useRouter()
+const userStore = useUserStore()
+const hasPermission = computed(() => userStore.hasPermission('can_manage_materials'))
 
 const loading = ref(false)
 const showCategoryPicker = ref(false)
@@ -69,6 +72,7 @@ async function handleSubmit() {
 
 <template>
   <div class="material-create-page">
+    <template v-if="hasPermission">
     <van-nav-bar title="创建物料" left-arrow @click-left="router.back()" />
 
     <van-form @submit="handleSubmit">
@@ -103,6 +107,8 @@ async function handleSubmit() {
     <van-popup v-model:show="showUnitPicker" position="bottom" round>
       <van-picker title="选择单位" :columns="unitOptions" @confirm="onUnitConfirm" @cancel="showUnitPicker = false" />
     </van-popup>
+    </template>
+    <van-empty v-else description="暂无权限，请联系管理员" />
   </div>
 </template>
 

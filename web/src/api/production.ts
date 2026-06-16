@@ -1,5 +1,5 @@
 import request from '@/utils/request'
-import type { ProductionOrder, ProductionOrderCreate, ProductionOrderImage } from '@/types/production'
+import type { ProductionOrder, ProductionOrderCreate, ProductionOrderUpdate, ProductionOrderImage } from '@/types/production'
 
 // 生产订单列表
 export function getProductionOrders(params: {
@@ -21,9 +21,19 @@ export function createProductionOrder(data: ProductionOrderCreate) {
   return request.post<ProductionOrder>('/production-orders', data)
 }
 
+// 更新生产订单（仅草稿状态可编辑）
+export function updateProductionOrder(id: string, data: ProductionOrderUpdate) {
+  return request.put<ProductionOrder>(`/production-orders/${id}`, data)
+}
+
 // 发布生产订单
 export function publishProductionOrder(id: string) {
   return request.put<any>(`/production-orders/${id}/publish`, {})
+}
+
+// 开工
+export function startProductionOrder(id: string) {
+  return request.put<any>(`/production-orders/${id}/start`, {})
 }
 
 // 检查物料（标记已消耗）
@@ -61,9 +71,11 @@ export function completeProductionOrder(id: string) {
   return request.put<any>(`/production-orders/${id}/complete`, {})
 }
 
-// 取消生产订单
-export function cancelProductionOrder(id: string) {
-  return request.put<any>(`/production-orders/${id}/cancel`, {})
+// 取消生产订单（仅管理员，可选退回库存）
+export function cancelProductionOrder(id: string, returnInventory: boolean = true) {
+  return request.put<any>(`/production-orders/${id}/cancel`, null, {
+    params: { return_inventory: returnInventory }
+  })
 }
 
 // 删除生产订单

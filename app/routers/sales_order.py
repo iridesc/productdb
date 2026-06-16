@@ -14,7 +14,6 @@ from app.models import (
     SalesOrderImageType,
     SalesOrderItem,
     SalesOrderStatusEnum,
-    Customer,
     Material,
     InventoryTransaction,
     InventoryTransactionTypeEnum,
@@ -29,7 +28,7 @@ from app.schemas import (
     SalesOrderItemCreate,
     SalesOrderItemResponse,
 )
-from app.utils.auth import get_current_active_user
+from app.utils.auth import get_current_active_user, require_permissions
 
 router = APIRouter(prefix="/sales-orders", tags=["销售订单"])
 
@@ -53,7 +52,6 @@ def get_sales_orders(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     status: Optional[SalesOrderStatusEnum] = None,
-    customer_id: Optional[UUID] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
     db: Session = Depends(get_db),
@@ -66,8 +64,6 @@ def get_sales_orders(
 
     if status:
         query = query.filter(SalesOrder.status == status)
-    if customer_id:
-        query = query.filter(SalesOrder.customer_id == customer_id)
     if start_date:
         query = query.filter(SalesOrder.order_date >= start_date)
     if end_date:
@@ -91,16 +87,6 @@ def create_sales_order(
     current_user: User = Depends(get_current_active_user),
 ):
     """创建销售订单（草稿状态）"""
-    customer = None
-    if order_data.customer_id:
-        customer = (
-            db.query(Customer).filter(Customer.id == order_data.customer_id).first()
-        )
-        if not customer:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="客户不存在"
-            )
-
     # 校验每种产品数量不超过1000
     if order_data.items:
         for item in order_data.items:
@@ -118,9 +104,7 @@ def create_sales_order(
 
     db_order = SalesOrder(
         order_no=order_no,
-        customer_id=order_data.customer_id,
-        customer_name=order_data.customer_name or (customer.name if customer else None),
-        customer_address=order_data.customer_address,
+        customer_info=order_data.customer_info,
         express_no=order_data.express_no,
         order_date=order_data.order_date,
         delivery_date=order_data.delivery_date,
@@ -198,23 +182,9 @@ def update_sales_order(
             status_code=status.HTTP_400_BAD_REQUEST, detail="只有草稿状态的订单可以编辑"
         )
 
-    if order_data.customer_id and order_data.customer_id != order.customer_id:
-        customer = (
-            db.query(Customer).filter(Customer.id == order_data.customer_id).first()
-        )
-        if not customer:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="客户不存在"
-            )
-
     update_data = order_data.dict(exclude_unset=True)
     for key, value in update_data.items():
         setattr(order, key, value)
-
-    if order_data.customer_id:
-        customer = db.query(Customer).filter(Customer.id == order.customer_id).first()
-        if customer:
-            order.customer_name = customer.name
 
     db.commit()
     db.refresh(order)
@@ -576,10 +546,11 @@ def complete_sales_order(
 @router.put("/{order_id}/cancel", response_model=SalesOrderResponse)
 def cancel_sales_order(
     order_id: UUID,
+    return_inventory: bool = Query(True, description="是否退回已锁定物料库存"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_permissions("is_superuser")),
 ):
-    """取消销售订单（仅待处理状态可取消）"""
+    """取消销售订单（仅管理员，可选是否退回库存）"""
     order = db.query(SalesOrder).filter(SalesOrder.id == order_id).first()
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="订单不存在")
@@ -589,8 +560,8 @@ def cancel_sales_order(
             status_code=status.HTTP_400_BAD_REQUEST, detail="只有草稿或待处理状态的订单可以取消"
         )
 
-    if order.status == SalesOrderStatusEnum.PENDING:
-        # 发布时已扣减所有物料库存，取消时全部退回
+    if order.status == SalesOrderStatusEnum.PENDING and return_inventory:
+        # 退回已扣减的物料库存
         for item in order.items:
             product = db.query(Material).filter(Material.id == item.product_id).first()
             if product:

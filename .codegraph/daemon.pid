@@ -1,6 +1,6 @@
 {
-  "pid": 82205,
+  "pid": 79011,
   "version": "0.9.9",
-  "socketPath": "/Users/zhangziyuan/Documents/productdb/.codegraph/daemon.sock",
-  "startedAt": 1780740201347
+  "socketPath": "/Users/zhangziyuan/Projects/productdb/.codegraph/daemon.sock",
+  "startedAt": 1781404404596
 }

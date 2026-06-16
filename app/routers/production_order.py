@@ -18,7 +18,7 @@ from app.schemas import (
     ProductionOrderCreate, ProductionOrderImageResponse, ProductionOrderUpdate,
     ProductionOrderResponse, ProductionOrderListResponse, YieldUpdate,
 )
-from app.utils.auth import get_current_active_user, require_roles
+from app.utils.auth import get_current_active_user, require_permissions
 
 router = APIRouter(prefix="/production-orders", tags=["生产订单"])
 
@@ -38,11 +38,6 @@ def generate_production_no(db: Session) -> str:
     return f"P-{date_part}-{rand_part}"
 
 
-def _get_user_role_codes(user: User) -> set:
-    """获取用户的角色编码集合"""
-    return {ur.role_code for ur in user.roles}
-
-
 @router.get("", response_model=ProductionOrderListResponse)
 def get_production_orders(
     page: int = Query(1, ge=1),
@@ -54,20 +49,17 @@ def get_production_orders(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
-    """获取生产订单列表（按角色过滤）"""
+    """获取生产订单列表"""
     query = db.query(ProductionOrder).options(
         selectinload(ProductionOrder.product).selectinload(Material.images),
         selectinload(ProductionOrder.items).selectinload(ProductionOrderItem.material).selectinload(Material.images)
     )
 
-    # 角色过滤：纯工人只能看到 pending + in_production
-    role_codes = _get_user_role_codes(current_user)
-    is_worker_only = "worker" in role_codes and "operator" not in role_codes and "admin" not in role_codes
-    if is_worker_only:
+    # 无创建权限的用户仅看到待生产订单
+    if not current_user.is_superuser and not current_user.can_create_production:
         query = query.filter(
             ProductionOrder.status.in_([
                 ProductionOrderStatusEnum.PENDING,
-                ProductionOrderStatusEnum.IN_PRODUCTION,
             ])
         )
 
@@ -90,7 +82,7 @@ def get_production_orders(
 def create_production_order(
     order_data: ProductionOrderCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("operator", "admin")),
+    current_user: User = Depends(require_permissions("can_create_production")),
 ):
     """创建生产订单（草稿状态）"""
     # 检查产品是否存在
@@ -181,10 +173,12 @@ def update_production_order(
     order_id: UUID,
     order_data: ProductionOrderUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("operator", "admin")),
+    current_user: User = Depends(require_permissions("can_create_production")),
 ):
-    """更新生产订单（仅草稿状态可编辑）"""
-    order = db.query(ProductionOrder).filter(ProductionOrder.id == order_id).first()
+    """更新生产订单（仅草稿状态可编辑，修改产品/数量时重新生成BOM物料）"""
+    order = db.query(ProductionOrder).options(
+        selectinload(ProductionOrder.items),
+    ).filter(ProductionOrder.id == order_id).first()
     if not order:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -197,8 +191,54 @@ def update_production_order(
             detail="只有草稿状态的订单可以编辑"
         )
 
-    for key, value in order_data.dict(exclude_unset=True).items():
+    # 检查是否需要重新生成 BOM
+    product_changed = (
+        order_data.product_id is not None
+        and order_data.product_id != order.product_id
+    )
+    quantity_changed = (
+        order_data.quantity is not None
+        and float(order_data.quantity) != float(order.quantity)
+    )
+
+    # 更新基础字段
+    update_data = order_data.dict(exclude_unset=True)
+    for key, value in update_data.items():
         setattr(order, key, value)
+
+    db.flush()
+
+    # 如果产品或数量有变化，重新生成 BOM 物料需求
+    if product_changed or quantity_changed:
+        # 验证新产品存在
+        if product_changed:
+            new_product = db.query(Material).filter(
+                Material.id == order_data.product_id
+            ).first()
+            if not new_product:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="产品不存在"
+                )
+
+        # 删除旧的物料需求
+        for item in order.items:
+            db.delete(item)
+        db.flush()
+
+        # 基于新产品/新数量重新生成 BOM
+        target_product_id = order_data.product_id if product_changed else order.product_id
+        target_quantity = order_data.quantity if quantity_changed else order.quantity
+
+        boms = db.query(BOM).filter(BOM.product_id == target_product_id).all()
+        for bom in boms:
+            required_quantity = float(target_quantity) * float(bom.quantity) * (1 + float(bom.scrap_rate) / 100)
+            db_item = ProductionOrderItem(
+                production_order_id=order.id,
+                material_id=bom.material_id,
+                quantity=required_quantity
+            )
+            db.add(db_item)
 
     db.commit()
     db.refresh(order)
@@ -210,7 +250,7 @@ def update_production_order(
 def delete_production_order(
     order_id: UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("operator", "admin")),
+    current_user: User = Depends(require_permissions("can_create_production")),
 ):
     """删除生产订单（仅草稿状态可删除）"""
     order = db.query(ProductionOrder).filter(ProductionOrder.id == order_id).first()
@@ -236,7 +276,7 @@ def delete_production_order(
 def publish_production_order(
     order_id: UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("operator", "admin")),
+    current_user: User = Depends(require_permissions("can_create_production")),
 ):
     """发布生产订单：校验物料库存并扣减（草稿 → 待生产）"""
     order = db.query(ProductionOrder).filter(ProductionOrder.id == order_id).first()
@@ -322,22 +362,19 @@ def publish_production_order(
 def start_production_order(
     order_id: UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("worker", "admin")),
+    current_user: User = Depends(require_permissions("can_manage_production")),
 ):
-    """开工：将订单从待生产转为生产中（库存无变化）"""
+    """已废弃：状态机已简化，待生产订单可直接进行物料检查、产出确认、报工完成，无需开工步骤"""
     order = db.query(ProductionOrder).filter(ProductionOrder.id == order_id).first()
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="生产订单不存在")
 
     if order.status != ProductionOrderStatusEnum.PENDING:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="只有待生产状态的订单可以开工"
+            status_code=status.HTTP_400_BAD_REQUEST, detail="只有待生产状态的订单可以操作"
         )
 
-    order.status = ProductionOrderStatusEnum.IN_PRODUCTION
-    db.commit()
-    db.refresh(order)
-
+    # 开工步骤已移除，状态不变，直接返回订单
     return order
 
 
@@ -345,9 +382,9 @@ def start_production_order(
 def complete_production_order(
     order_id: UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("worker", "admin")),
+    current_user: User = Depends(require_permissions("can_manage_production")),
 ):
-    """报工完成：成品入库（生产中 → 已完成）"""
+    """报工完成：成品入库（待生产 → 已完成）"""
     order = db.query(ProductionOrder).options(
         selectinload(ProductionOrder.items),
         selectinload(ProductionOrder.images),
@@ -355,9 +392,9 @@ def complete_production_order(
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="生产订单不存在")
 
-    if order.status != ProductionOrderStatusEnum.IN_PRODUCTION:
+    if order.status != ProductionOrderStatusEnum.PENDING:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="只有生产中的订单可以报工完成"
+            status_code=status.HTTP_400_BAD_REQUEST, detail="只有待生产状态的订单可以报工完成"
         )
 
     # 检查所有物料已分配
@@ -368,8 +405,8 @@ def complete_production_order(
             detail=f"还有 {len(unchecked)} 个物料未检查，请先完成物料检查",
         )
 
-    # 检查产出数量已确认
-    if order.completed_quantity is None or order.completed_quantity <= 0:
+    # 检查产出数量已确认（允许 0，表示无产出）
+    if order.completed_quantity is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="请先确认产出数量",
@@ -410,46 +447,44 @@ def complete_production_order(
     return order
 
 
+
 @router.put("/{order_id}/cancel", response_model=ProductionOrderResponse)
 def cancel_production_order(
     order_id: UUID,
+    return_inventory: bool = Query(True, description="是否退回已扣物料库存"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("operator", "admin")),
+    current_user: User = Depends(require_permissions("is_superuser")),
 ):
-    """取消生产订单：退回已扣物料库存（仅待生产状态可取消，生产中不可取消）"""
+    """取消生产订单（仅管理员，可选是否退回库存）"""
     order = db.query(ProductionOrder).filter(ProductionOrder.id == order_id).first()
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="生产订单不存在")
-
-    if order.status == ProductionOrderStatusEnum.IN_PRODUCTION:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="生产中的订单不可取消"
-        )
 
     if order.status != ProductionOrderStatusEnum.PENDING:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="只有待生产状态的订单可以取消"
         )
 
-    # 退回已扣物料库存
-    for item in order.items:
-        material = db.query(Material).filter(Material.id == item.material_id).first()
-        if material:
-            before_stock = material.current_stock
-            material.current_stock += item.quantity
+    if return_inventory:
+        # 退回已扣物料库存
+        for item in order.items:
+            material = db.query(Material).filter(Material.id == item.material_id).first()
+            if material:
+                before_stock = material.current_stock
+                material.current_stock += item.quantity
 
-            transaction = InventoryTransaction(
-                material_id=material.id,
-                transaction_type=InventoryTransactionTypeEnum.ADJUSTMENT,
-                quantity=item.quantity,
-                before_quantity=before_stock,
-                after_quantity=material.current_stock,
-                reference_type="production_order_cancel",
-                reference_id=order_id,
-                operator=current_user.username,
-                remark=f"取消生产订单 {order.order_no}，退回物料",
-            )
-            db.add(transaction)
+                transaction = InventoryTransaction(
+                    material_id=material.id,
+                    transaction_type=InventoryTransactionTypeEnum.ADJUSTMENT,
+                    quantity=item.quantity,
+                    before_quantity=before_stock,
+                    after_quantity=material.current_stock,
+                    reference_type="production_order_cancel",
+                    reference_id=order_id,
+                    operator=current_user.username,
+                    remark=f"取消生产订单 {order.order_no}，退回物料",
+                )
+                db.add(transaction)
 
     order.status = ProductionOrderStatusEnum.CANCELLED
     db.commit()
@@ -503,10 +538,10 @@ def set_production_yield(
             detail="生产订单不存在"
         )
 
-    if order.status != ProductionOrderStatusEnum.IN_PRODUCTION:
+    if order.status != ProductionOrderStatusEnum.PENDING:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="只有生产中的订单可以确认产出"
+            detail="只有待生产状态的订单可以确认产出"
         )
 
     if yield_data.completed_quantity > order.quantity:
@@ -533,9 +568,9 @@ async def upload_production_order_image(
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="订单不存在")
 
-    if order.status != ProductionOrderStatusEnum.IN_PRODUCTION:
+    if order.status != ProductionOrderStatusEnum.PENDING:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="只有生产中的订单可以上传图片"
+            status_code=status.HTTP_400_BAD_REQUEST, detail="只有待生产状态的订单可以上传图片"
         )
 
     filename = file.filename or ""
@@ -644,10 +679,10 @@ def distribute_production_item(
             detail="生产订单不存在"
         )
 
-    if order.status != ProductionOrderStatusEnum.IN_PRODUCTION:
+    if order.status != ProductionOrderStatusEnum.PENDING:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="只有生产中的订单可以分配物料"
+            detail="只有待生产状态的订单可以分配物料"
         )
 
     item = db.query(ProductionOrderItem).filter(

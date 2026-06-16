@@ -27,7 +27,17 @@ async function handleLogin() {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
     })
     userStore.setToken(res.access_token)
-    router.replace('/sales-orders')
+    if (res.user) {
+      userStore.setUserInfo(res.user)
+    }
+    // 根据权限跳转到第一个可用页面
+    if (res.user?.can_manage_sales || res.user?.is_superuser) {
+      router.replace('/sales-orders')
+    } else if (res.user?.can_manage_production) {
+      router.replace('/production-orders')
+    } else {
+      router.replace('/materials')
+    }
   } catch (e) {
     const errorMessage = handleError(e)
     showMessage(errorMessage)

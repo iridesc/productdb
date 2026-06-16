@@ -47,11 +47,46 @@ def init_roles():
         db.close()
 
 
+def migrate_customer_info():
+    """迁移：将 customer_name + customer_address 合并到 customer_info，并清理旧结构"""
+    db = SessionLocal()
+    try:
+        from sqlalchemy import text, inspect
+        inspector = inspect(engine)
+
+        # 检查 sales_orders 表是否有 customer_name 列（需要迁移的旧结构标志）
+        cols = [c["name"] for c in inspector.get_columns("sales_orders")]
+
+        if "customer_name" in cols:
+            # 1. 添加 customer_info 列
+            if "customer_info" not in cols:
+                db.execute(text("ALTER TABLE sales_orders ADD COLUMN customer_info TEXT"))
+
+            # 2. 迁移数据
+            db.execute(text(
+                "UPDATE sales_orders SET customer_info = TRIM(COALESCE(customer_name, '') || ' ' || COALESCE(customer_address, ''))"
+            ))
+
+            # 3. 删除旧列
+            db.execute(text("ALTER TABLE sales_orders DROP COLUMN IF EXISTS customer_id"))
+            db.execute(text("ALTER TABLE sales_orders DROP COLUMN IF EXISTS customer_name"))
+            db.execute(text("ALTER TABLE sales_orders DROP COLUMN IF EXISTS customer_address"))
+
+        # 4. 删除 customers 表（如果存在）
+        if "customers" in inspector.get_table_names():
+            db.execute(text("DROP TABLE IF EXISTS customers CASCADE"))
+
+        db.commit()
+    finally:
+        db.close()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     os.makedirs(os.path.join(UPLOAD_DIR, "images"), exist_ok=True)
     Base.metadata.create_all(bind=engine)
     init_roles()
+    migrate_customer_info()
     yield
     pass
 
@@ -63,7 +98,7 @@ app = FastAPI(
     
     - 🔧 **物料管理**: 物料基础信息、分类管理
     - 📦 **BOM管理**: 产品物料清单，支持多层级的BOM树
-    - 👥 **客户管理**: 客户信息维护
+
     - 📝 **销售订单**: 销售订单的全流程管理
     - 🏭 **生产订单**: 生产订单及物料需求计算
     - 📊 **库存管理**: 实时库存、库存流水、低库存预警

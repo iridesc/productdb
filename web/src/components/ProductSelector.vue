@@ -88,6 +88,8 @@ function selectProduct(product: any) {
         class="product-item"
         @click="selectProduct(product)"
       >
+        <img v-if="product.thumbnail_url" :src="product.thumbnail_url" class="product-item-thumb" />
+        <div v-else class="product-item-thumb product-item-thumb-placeholder"></div>
         <div class="product-item-info">
           <div class="product-item-name">{{ product.name }}</div>
           <div class="product-item-code">编码：{{ product.code }}</div>
@@ -132,6 +134,19 @@ function selectProduct(product: any) {
 
 .product-item:active {
   background-color: #f5f5f5;
+}
+
+.product-item-thumb {
+  width: 40px;
+  height: 40px;
+  border-radius: 4px;
+  object-fit: cover;
+  margin-right: 12px;
+  flex-shrink: 0;
+}
+
+.product-item-thumb-placeholder {
+  background: #f5f5f5;
 }
 
 .product-item-info {
