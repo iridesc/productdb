@@ -25,7 +25,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: docker.m.daocloud.io/library/productdb-api:latest
+    image: docker.io/irid/productdb:latest
     container_name: productdb-api
     environment:
       HTTP_PROXY: ""

@@ -267,7 +267,7 @@ def parse_args():
     )
     parser.add_argument(
         "--inventree-url",
-        default=os.environ.get("INVENTREE_URL", "https://productdb.irid.cc"),
+        default=os.environ.get("INVENTREE_URL", ""),
         help="Inventree base URL",
     )
     parser.add_argument(
@@ -277,7 +277,7 @@ def parse_args():
     )
     parser.add_argument(
         "--productdb-url",
-        default=os.environ.get("PRODUCTDB_URL", "http://localhost:8001"),
+        default=os.environ.get("PRODUCTDB_URL", ""),
         help="ProductDB base URL",
     )
     parser.add_argument(
@@ -317,8 +317,16 @@ def main():
         datefmt="%H:%M:%S",
     )
 
+    if not args.inventree_url:
+        logging.error("Inventree URL is required. Use --inventree-url or INVENTREE_URL env var.")
+        sys.exit(1)
+
     if not args.inventree_token:
         logging.error("Inventree token is required. Use --inventree-token or INVENTREE_TOKEN env var.")
+        sys.exit(1)
+
+    if not args.productdb_url:
+        logging.error("ProductDB URL is required. Use --productdb-url or PRODUCTDB_URL env var.")
         sys.exit(1)
 
     if not args.productdb_password:
