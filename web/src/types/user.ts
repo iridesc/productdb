@@ -9,6 +9,8 @@ export interface User {
   can_manage_production: boolean
   can_manage_inventory: boolean
   can_manage_users: boolean
+  can_create_sales: boolean
+  can_create_production: boolean
   created_at: string
 }
 
@@ -21,6 +23,8 @@ export interface UserCreate {
   can_manage_production?: boolean
   can_manage_inventory?: boolean
   can_manage_users?: boolean
+  can_create_sales?: boolean
+  can_create_production?: boolean
 }
 
 export interface UserUpdate {
@@ -33,4 +37,6 @@ export interface UserUpdate {
   can_manage_production?: boolean
   can_manage_inventory?: boolean
   can_manage_users?: boolean
+  can_create_sales?: boolean
+  can_create_production?: boolean
 }

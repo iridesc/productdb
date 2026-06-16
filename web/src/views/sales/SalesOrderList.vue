@@ -1,13 +1,18 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { showDialog } from 'vant'
 import { previewImage } from '@/utils/image'
 import { showMessage } from '@/utils/request'
 import { getSalesOrders } from '@/api/sales'
 import type { SalesOrder } from '@/types/sales'
 import { handleError } from '@/utils/request'
+import { useUserStore } from '@/store/user'
 
 const router = useRouter()
+const userStore = useUserStore()
+const hasPermission = computed(() => userStore.hasPermission('can_manage_sales'))
+const canCreate = computed(() => userStore.hasPermission('can_create_sales'))
 const loading = ref(false)
 const list = ref<SalesOrder[]>([])
 const pagination = ref({ page: 1, page_size: 20, total: 0 })
@@ -64,6 +69,11 @@ function goDetail(id: string) {
   router.push(`/sales-orders/${id}`)
 }
 
+function showFullText(title: string, text: string) {
+  if (!text) return
+  showDialog({ title, message: text, confirmButtonText: '关闭' })
+}
+
 onMounted(() => {
   fetchList()
 })
@@ -71,9 +81,10 @@ onMounted(() => {
 
 <template>
   <div class="sales-page">
+    <template v-if="hasPermission">
     <van-nav-bar title="销售订单" left-arrow @click-left="router.back()">
       <template #right>
-        <van-icon name="plus" size="18" @click="goCreate" />
+        <van-icon v-if="canCreate" name="plus" size="18" @click="goCreate" />
       </template>
     </van-nav-bar>
 
@@ -84,33 +95,33 @@ onMounted(() => {
             <thead>
               <tr>
                 <th>订单号</th>
-                <th>图片</th>
                 <th>状态</th>
-                <th>客户</th>
-                <th>金额</th>
                 <th>商品数</th>
+                <th>图片</th>
+                <th>备注</th>
                 <th>创建时间</th>
+                <th>客户信息</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="item in list" :key="item.id" @click="goDetail(item.id)">
                 <td class="order-no-cell">{{ item.order_no }}</td>
                 <td>
-                  <div class="thumbnail-list">
-                    <img v-for="(img, idx) in getOrderThumbnails(item)" :key="idx" :src="img" class="thumbnail-img" @click.stop="previewImage(img)" />
-                    <span v-if="!getOrderThumbnails(item).length" class="no-image">-</span>
-                  </div>
-                </td>
-                <td>
                   <span class="status-tag"
                     :style="{ background: statusColor[item.status] + '20', color: statusColor[item.status] }">
                     {{ statusMap[item.status] }}
                   </span>
                 </td>
-                <td>{{ item.customer_name || '-' }}</td>
-                <td class="price-cell">¥{{ item.total_amount }}</td>
                 <td class="center-cell">{{ item.items?.length || 0 }}</td>
+                <td>
+                  <div class="thumbnail-list">
+                    <img v-for="(img, idx) in getOrderThumbnails(item)" :key="idx" :src="img" class="thumbnail-img" @click.stop="previewImage(img)" />
+                    <span v-if="!getOrderThumbnails(item).length" class="no-image">-</span>
+                  </div>
+                </td>
+                <td class="text-ellipsis" @click.stop="showFullText('备注', item.remark)">{{ item.remark || '-' }}</td>
                 <td>{{ item.created_at?.slice(0, 10) }}</td>
+                <td class="text-ellipsis" @click.stop="showFullText('客户信息', item.customer_info)">{{ item.customer_info || '-' }}</td>
               </tr>
             </tbody>
           </table>
@@ -118,7 +129,19 @@ onMounted(() => {
           <van-empty v-if="!loading && list.length === 0" description="暂无订单" />
         </div>
       </van-pull-refresh>
+      <van-pagination
+        v-if="pagination.total > pagination.page_size"
+        v-model="pagination.page"
+        :total-items="pagination.total"
+        :items-per-page="pagination.page_size"
+        @change="fetchList"
+      />
+      <div v-if="pagination.total > pagination.page_size" style="text-align:center;color:#999;font-size:12px;padding:8px">
+        共 {{ pagination.total }} 条
+      </div>
     </div>
+    </template>
+    <van-empty v-else description="暂无权限，请联系管理员" />
   </div>
 </template>
 
@@ -135,10 +158,13 @@ onMounted(() => {
 .table-wrapper {
   background: #fff;
   border-radius: 8px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .order-table {
   width: 100%;
+  min-width: 600px;
   border-collapse: collapse;
   font-size: 13px;
 }
@@ -192,7 +218,7 @@ onMounted(() => {
 }
 
 .center-cell {
-  text-align: center;
+  text-align: left;
 }
 
 .status-tag {
@@ -219,5 +245,13 @@ onMounted(() => {
 .no-image {
   color: #999;
   font-size: 12px;
+}
+
+.text-ellipsis {
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
 }
 </style>

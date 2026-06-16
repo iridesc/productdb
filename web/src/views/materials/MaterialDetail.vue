@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { showConfirmDialog } from 'vant'
 import { getMaterial, updateMaterial, deleteMaterial, getMaterials } from '@/api/material'
@@ -9,8 +9,14 @@ import { getProductionOrders, createProductionOrder } from '@/api/production'
 import type { Material, MaterialCategory } from '@/types/material'
 import type { ProductionOrder } from '@/types/production'
 import { showMessage, handleError } from '@/utils/request'
+import { previewImages } from '@/utils/image'
+import { useUserStore } from '@/store/user'
 
 const route = useRoute()
+const userStore = useUserStore()
+const canManageMaterials = computed(() => userStore.hasPermission('can_manage_materials'))
+const canManageProduction = computed(() => userStore.hasPermission('can_manage_production'))
+const canCreateProduction = computed(() => userStore.hasPermission('can_create_production'))
 const router = useRouter()
 const loading = ref(false)
 const detail = ref<Material | null>(null)
@@ -86,8 +92,7 @@ const allMaterials = ref<Material[]>([])
 const imageList = ref<MaterialImage[]>([])
 const uploading = ref(false)
 const fileInputRef = ref<HTMLInputElement | null>(null)
-const showPreview = ref(false)
-const previewUrl = ref('')
+
 
 const productionOrders = ref<ProductionOrder[]>([])
 const showCreatePO = ref(false)
@@ -428,14 +433,9 @@ function triggerFileInput() {
   fileInputRef.value?.click()
 }
 
-function previewImage(index: number) {
-  previewUrl.value = imageList.value[index].image_url
-  showPreview.value = true
-}
-
-function closePreview() {
-  showPreview.value = false
-  previewUrl.value = ''
+function handlePreviewImage(index: number) {
+  const urls = imageList.value.map((img: any) => img.image_url)
+  previewImages(urls, index)
 }
 
 async function handleDeleteImage(image: MaterialImage) {
@@ -455,6 +455,13 @@ async function handleDeleteImage(image: MaterialImage) {
 onMounted(() => {
   fetchDetail()
 })
+
+// 监听路由参数变化，同组件跳转时重新加载
+watch(() => route.params.id, (newId) => {
+  if (newId && newId !== id) {
+    location.reload()
+  }
+})
 </script>
 
 <template>
@@ -462,8 +469,8 @@ onMounted(() => {
     <van-nav-bar :title="`物料｜${detail?.name || ''}`" left-arrow @click-left="router.back()">
       <template #right>
         <div class="nav-actions">
-          <van-icon v-if="!isEditing" name="edit" size="20" @click="handleEdit" style="margin-right: 16px" />
-          <van-icon v-if="!isEditing" name="delete-o" size="20" @click="handleDelete" />
+          <van-icon v-if="!isEditing && canManageMaterials" name="edit" size="20" @click="handleEdit" style="margin-right: 16px" />
+          <van-icon v-if="!isEditing && canManageMaterials" name="delete-o" size="20" @click="handleDelete" />
         </div>
       </template>
     </van-nav-bar>
@@ -489,7 +496,7 @@ onMounted(() => {
           <div v-if="imageList.length === 0" class="empty-text">暂无图片</div>
           <div class="image-grid">
             <div v-for="(image, index) in imageList" :key="image.id" class="image-item">
-              <img :src="image.image_url" alt="物料图片" @click="previewImage(index)" />
+              <img :src="image.image_url" alt="物料图片" @click="handlePreviewImage(index)" />
               <div v-if="isEditing" class="image-delete" @click.stop="handleDeleteImage(image)">
                 <van-icon name="close" size="12" color="#fff" />
               </div>
@@ -587,18 +594,26 @@ onMounted(() => {
         <div class="card">
           <div class="card-header">
             <div class="card-title">物料清单 (BOM)</div>
-            <van-button size="small" type="primary" @click="openAddBOM">添加</van-button>
+            <van-button v-if="canManageMaterials" size="small" type="primary" @click="openAddBOM">添加</van-button>
           </div>
           <div v-if="bomList.length === 0" class="empty-text">暂无BOM数据</div>
-          <div v-for="bom in bomList" :key="bom.id" class="bom-item">
+          <div v-for="bom in bomList" :key="bom.id" class="bom-item" @click="router.push(`/materials/${bom.material_id}`)">
+            <img
+              v-if="bom.thumbnail_url"
+              class="bom-thumb"
+              :src="bom.thumbnail_url"
+            />
+            <div v-else class="bom-thumb bom-thumb-placeholder">
+              <van-icon name="photo-o" size="16" />
+            </div>
             <div class="bom-info">
               <div class="bom-name">{{ bom.material_name }}</div>
               <div class="bom-code">{{ bom.material_code }}</div>
             </div>
-            <div class="bom-qty">{{ bom.quantity }} {{ detail.unit }}</div>
-            <div class="bom-actions">
-              <van-icon name="edit" size="18" @click="openEditBOM(bom)" />
-              <van-icon name="delete-o" size="18" @click="deleteBOMItem(bom)" />
+            <div class="bom-qty">{{ Number(bom.quantity) }} {{ detail.unit }}</div>
+            <div v-if="canManageMaterials" class="bom-actions">
+              <van-icon name="edit" size="18" @click.stop="openEditBOM(bom)" />
+              <van-icon name="delete-o" size="18" @click.stop="deleteBOMItem(bom)" />
             </div>
           </div>
         </div>
@@ -606,7 +621,7 @@ onMounted(() => {
         <div class="card">
           <div class="card-header">
             <div class="card-title">生产订单（最近5个）</div>
-            <van-button size="small" type="primary" @click="openCreatePO">
+            <van-button v-if="canCreateProduction" size="small" type="primary" @click="openCreatePO">
               <van-icon name="plus" size="12" style="margin-right: 4px" />创建
             </van-button>
           </div>
@@ -676,10 +691,6 @@ onMounted(() => {
       </div>
     </van-popup>
 
-    <div v-if="showPreview" class="image-preview-overlay" @click="closePreview">
-      <img :src="previewUrl" alt="预览图片" @click.stop />
-      <div class="preview-close" @click="closePreview">✕</div>
-    </div>
   </div>
 </template>
 
@@ -825,6 +836,25 @@ onMounted(() => {
   align-items: center;
   padding: 12px 0;
   border-bottom: 1px solid #f5f5f5;
+  cursor: pointer;
+  gap: 10px;
+}
+
+.bom-thumb {
+  width: 36px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid #eee;
+  flex-shrink: 0;
+}
+
+.bom-thumb-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f5f5f5;
+  color: #ccc;
 }
 
 .bom-item:last-child {
@@ -937,41 +967,6 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
-}
-
-.image-preview-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  background: rgba(0, 0, 0, 0.9);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 9999;
-}
-
-.image-preview-overlay img {
-  max-width: 95vw;
-  max-height: 95vh;
-  object-fit: contain;
-}
-
-.preview-close {
-  position: absolute;
-  top: 20px;
-  right: 20px;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.3);
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 24px;
   cursor: pointer;
 }
 

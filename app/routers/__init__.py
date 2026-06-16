@@ -1,11 +1,10 @@
-from . import auth, material, bom, customer, sales_order, production_order, inventory, image, users
+from . import auth, material, bom, sales_order, production_order, inventory, image, users
 
 routers = [
     auth.router,
     material.router,
     material.category_router,
     bom.router,
-    customer.router,
     sales_order.router,
     production_order.router,
     inventory.router,

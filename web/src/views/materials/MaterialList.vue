@@ -206,6 +206,16 @@ onMounted(() => {
           <van-empty v-if="!loading && list.length === 0" description="暂无物料" />
         </div>
       </van-pull-refresh>
+      <van-pagination
+        v-if="pagination.total > pagination.page_size"
+        v-model="pagination.page"
+        :total-items="pagination.total"
+        :items-per-page="pagination.page_size"
+        @change="fetchList"
+      />
+      <div v-if="pagination.total > pagination.page_size" style="text-align:center;color:#999;font-size:12px;padding:8px">
+        共 {{ pagination.total }} 条
+      </div>
     </div>
   </div>
 </template>
@@ -278,7 +288,7 @@ onMounted(() => {
 
 .thumb-cell {
   width: 56px;
-  text-align: center;
+  text-align: left;
 }
 
 .material-thumb {
@@ -314,7 +324,7 @@ onMounted(() => {
 }
 
 .center-cell {
-  text-align: center;
+  text-align: left;
 }
 
 .category-tag {

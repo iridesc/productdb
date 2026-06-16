@@ -57,3 +57,10 @@ export interface ProductionOrderCreate {
   quantity: number
   remark?: string
 }
+
+// 更新生产订单（仅草稿状态）
+export interface ProductionOrderUpdate {
+  product_id?: ID
+  quantity?: number
+  remark?: string
+}

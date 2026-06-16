@@ -1,12 +1,15 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { showMessage } from '@/utils/request'
 import { createProductionOrder } from '@/api/production'
 import { handleError } from '@/utils/request'
 import ProductSelector from '@/components/ProductSelector.vue'
+import { useUserStore } from '@/store/user'
 
 const router = useRouter()
+const userStore = useUserStore()
+const hasPermission = computed(() => userStore.hasPermission('can_create_production'))
 const loading = ref(false)
 
 const form = ref({
@@ -51,6 +54,7 @@ async function handleSubmit() {
 
 <template>
   <div class="create-page">
+    <template v-if="hasPermission">
     <van-nav-bar title="创建生产订单" left-arrow @click-left="router.back()" />
 
     <van-notice-bar
@@ -99,6 +103,8 @@ async function handleSubmit() {
       :filter="finishedProductFilter"
       @select="selectProduct"
     />
+    </template>
+    <van-empty v-else description="暂无权限，请联系管理员" />
   </div>
 </template>
 

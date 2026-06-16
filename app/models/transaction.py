@@ -24,22 +24,6 @@ class BOM(Base):
     material = relationship("Material", back_populates="bom_items", foreign_keys=[material_id])
 
 
-class Customer(Base):
-    __tablename__ = "customers"
-
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    name = Column(String(100), nullable=False)
-    code = Column(String(20), unique=True, nullable=False)
-    contact = Column(String(50), nullable=True)
-    phone = Column(String(20), nullable=True)
-    email = Column(String(100), nullable=True)
-    address = Column(String(200), nullable=True)
-    is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-    sales_orders = relationship("SalesOrder", back_populates="customer")
-
 
 class SalesOrderStatusEnum(str, enum.Enum):
     DRAFT = "draft"  # 草稿
@@ -53,9 +37,7 @@ class SalesOrder(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     order_no = Column(String(20), unique=True, nullable=False, index=True)
-    customer_id = Column(UUID(as_uuid=True), ForeignKey("customers.id"), nullable=True)
-    customer_name = Column(String(100), nullable=True)
-    customer_address = Column(String(200), nullable=True)
+    customer_info = Column(Text, nullable=True)
     express_no = Column(String(50), nullable=True)
     express_confirmed = Column(Boolean, default=False)
     order_date = Column(Date, nullable=False)
@@ -66,7 +48,6 @@ class SalesOrder(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    customer = relationship("Customer", back_populates="sales_orders")
     items = relationship("SalesOrderItem", back_populates="order", cascade="all, delete-orphan")
     images = relationship("SalesOrderImage", back_populates="order", cascade="all, delete-orphan")
     production_orders = relationship("ProductionOrder", back_populates="sales_order")
@@ -126,7 +107,7 @@ class ProductionOrder(Base):
     sales_order_id = Column(UUID(as_uuid=True), ForeignKey("sales_orders.id"), nullable=True)
     product_id = Column(UUID(as_uuid=True), ForeignKey("materials.id"), nullable=False)
     quantity = Column(Numeric(10, 2), nullable=False)
-    completed_quantity = Column(Numeric(10, 2), default=0)
+    completed_quantity = Column(Numeric(10, 2), nullable=True, default=None)
     start_date = Column(Date, nullable=True)
     end_date = Column(Date, nullable=True)
     status = Column(Enum(ProductionOrderStatusEnum), default=ProductionOrderStatusEnum.DRAFT)
@@ -232,7 +213,9 @@ class User(Base):
     can_manage_production = Column(Boolean, default=True)
     can_manage_inventory = Column(Boolean, default=True)
     can_manage_users = Column(Boolean, default=False)
+    can_create_sales = Column(Boolean, default=False)
+    can_create_production = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    roles = relationship("UserRole", back_populates="user")
+    roles = relationship("UserRole", back_populates="user", cascade="all, delete-orphan")

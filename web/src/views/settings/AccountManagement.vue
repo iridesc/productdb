@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { showToast, showSuccessToast, showDialog } from 'vant'
+import { ref, computed, onMounted } from 'vue'
+import { showToast, showSuccessToast, showConfirmDialog } from 'vant'
 import { useRouter } from 'vue-router'
 import { getUsers, createUser, updateUser, deleteUser, updatePassword } from '@/api/user'
 import type { User, UserCreate, UserUpdate } from '@/types/user'
@@ -9,6 +9,7 @@ import { useUserStore } from '@/store/user'
 
 const router = useRouter()
 const userStore = useUserStore()
+const isSuperuser = computed(() => userStore.userInfo?.is_superuser === true)
 const users = ref<User[]>([])
 const loading = ref(false)
 const showCreatePopup = ref(false)
@@ -23,7 +24,9 @@ const formData = ref<UserCreate>({
   can_manage_sales: true,
   can_manage_production: true,
   can_manage_inventory: true,
-  can_manage_users: false
+  can_manage_users: false,
+  can_create_sales: false,
+  can_create_production: false
 })
 
 const editFormData = ref<UserUpdate>({
@@ -34,7 +37,9 @@ const editFormData = ref<UserUpdate>({
   can_manage_sales: true,
   can_manage_production: true,
   can_manage_inventory: true,
-  can_manage_users: false
+  can_manage_users: false,
+  can_create_sales: false,
+  can_create_production: false
 })
 
 const passwordData = ref({
@@ -65,7 +70,9 @@ function openCreateDialog() {
     can_manage_sales: true,
     can_manage_production: true,
     can_manage_inventory: true,
-    can_manage_users: false
+    can_manage_users: false,
+    can_create_sales: false,
+    can_create_production: false
   }
   showCreatePopup.value = true
 }
@@ -80,7 +87,9 @@ function openEditDialog(user: User) {
     can_manage_sales: user.can_manage_sales,
     can_manage_production: user.can_manage_production,
     can_manage_inventory: user.can_manage_inventory,
-    can_manage_users: user.can_manage_users
+    can_manage_users: user.can_manage_users,
+    can_create_sales: user.can_create_sales,
+    can_create_production: user.can_create_production
   }
   showEditPopup.value = true
 }
@@ -124,22 +133,22 @@ async function handleEdit() {
 }
 
 async function handleDelete(user: User) {
-  showDialog({
-    title: '确认删除',
-    message: `确定要删除用户 "${user.username}" 吗？此操作不可恢复。`,
-    showCancelButton: true,
-    confirmButtonText: '删除',
-    cancelButtonText: '取消',
-    confirmButtonColor: '#ee0a24'
-  }).then(async () => {
-    try {
-      await deleteUser(user.id)
-      showSuccessToast('删除成功')
-      loadUsers()
-    } catch (error) {
+  try {
+    await showConfirmDialog({
+      title: '确认删除',
+      message: `确定要删除用户「${user.username}」吗？此操作不可恢复。`,
+      confirmButtonText: '删除',
+      confirmButtonColor: '#ee0a24'
+    })
+    await deleteUser(user.id)
+    showSuccessToast('删除成功')
+    loadUsers()
+  } catch (error) {
+    // 用户取消或删除失败
+    if (error !== 'cancel') {
       console.error('删除用户失败:', error)
     }
-  })
+  }
 }
 
 async function handleChangePassword() {
@@ -164,86 +173,88 @@ async function handleChangePassword() {
   }
 }
 
-function handleLogout() {
-  showDialog({
-    title: '提示',
-    message: '确定要退出登录吗？',
-    showCancelButton: true,
-    confirmButtonText: '确定',
-    cancelButtonText: '取消'
-  }).then(() => {
+async function handleLogout() {
+  try {
+    await showConfirmDialog({
+      title: '提示',
+      message: '确定要退出登录吗？'
+    })
     userStore.logout()
     router.push('/login')
-  })
+  } catch {
+    // 用户取消
+  }
 }
 </script>
 
 <template>
   <div class="account-management">
-    <van-nav-bar
-      title="账号管理"
-      left-arrow
-      @click-left="$router.back()"
-    >
-      <template #right>
-        <van-icon name="close" size="18" @click="handleLogout" style="margin-right: 8px;" />
-        <van-icon name="plus" size="20" @click="openCreateDialog" />
-      </template>
-    </van-nav-bar>
+    <van-nav-bar title="我的" left-arrow @click-left="$router.back()" />
 
-    <div class="content">
-      <van-pull-refresh v-model="loading" @refresh="loadUsers">
-        <van-loading v-if="loading && users.length === 0" class="loading" />
-        
-        <van-empty v-else-if="!loading && users.length === 0" description="暂无账号" />
-        
-        <van-cell-group v-else inset>
-          <van-cell
-            v-for="user in users"
-            :key="user.id"
-            :title="user.username"
-            label=" "
-          >
-            <template #icon>
-              <van-icon name="contact" size="24" style="margin-right: 10px; line-height: inherit;" />
-            </template>
-            <template #value>
-              <div class="user-actions">
-                <van-tag :type="user.is_active ? 'success' : 'danger'" size="small">
-                  {{ user.is_active ? '启用' : '禁用' }}
-                </van-tag>
-                <van-tag v-if="user.is_superuser" type="warning" size="small" style="margin-left: 4px;">
-                  管理员
-                </van-tag>
-              </div>
-            </template>
-            <template #right-icon>
-              <div class="action-buttons">
-                <van-icon
-                  name="edit"
-                  size="18"
-                  color="#1989fa"
-                  @click.stop="openEditDialog(user)"
-                  style="margin-right: 12px;"
-                />
-                <van-icon
-                  name="lock"
-                  size="18"
-                  color="#07c160"
-                  @click.stop="openPasswordDialog(user)"
-                  style="margin-right: 12px;"
-                />
-                <van-icon
-                  name="delete-o"
-                  size="18"
-                  color="#ee0a24"
-                  @click.stop="handleDelete(user)"
-                />
-              </div>
-            </template>
-          </van-cell>
-        </van-cell-group>
-      </van-pull-refresh>
+    <!-- 我的信息 -->
+    <div class="profile-section">
+      <div class="profile-avatar">
+        <van-icon name="contact" size="48" color="#1989fa" />
+      </div>
+      <div class="profile-name">{{ userStore.userInfo?.username || '-' }}</div>
+      <div class="profile-role">
+        <van-tag v-if="userStore.userInfo?.is_superuser" type="warning" size="medium">超级管理员</van-tag>
+        <van-tag v-else type="primary" size="medium">普通用户</van-tag>
+      </div>
+      <div class="permission-tags">
+        <van-tag v-if="userStore.userInfo?.is_superuser" type="warning" size="small" style="margin: 2px">全部权限</van-tag>
+        <template v-else>
+          <van-tag v-if="userStore.userInfo?.can_manage_materials" type="primary" size="small" style="margin: 2px">物料管理</van-tag>
+          <van-tag v-if="userStore.userInfo?.can_manage_sales" type="primary" size="small" style="margin: 2px">销售订单</van-tag>
+          <van-tag v-if="userStore.userInfo?.can_manage_production" type="primary" size="small" style="margin: 2px">生产订单</van-tag>
+        </template>
+      </div>
+    </div>
+
+    <!-- 用户管理 — 仅超级管理员可见 -->
+    <template v-if="isSuperuser">
+      <div class="section-title">用户管理</div>
+      <div class="content">
+        <van-button size="small" type="primary" block @click="openCreateDialog" style="margin-bottom: 12px">
+          <van-icon name="plus" size="16" style="margin-right: 4px" />新增账号
+        </van-button>
+        <van-pull-refresh v-model="loading" @refresh="loadUsers">
+          <van-loading v-if="loading && users.length === 0" class="loading" />
+          <van-empty v-else-if="!loading && users.length === 0" description="暂无账号" />
+          <van-cell-group v-else inset>
+            <van-cell
+              v-for="user in users"
+              :key="user.id"
+              :title="user.username"
+              label=" "
+            >
+              <template #icon>
+                <van-icon name="contact" size="24" style="margin-right: 10px; line-height: inherit;" />
+              </template>
+              <template #value>
+                <div class="user-actions">
+                  <van-tag :type="user.is_active ? 'success' : 'danger'" size="small">
+                    {{ user.is_active ? '启用' : '禁用' }}
+                  </van-tag>
+                  <van-tag v-if="user.is_superuser" type="warning" size="small" style="margin-left: 4px;">管理员</van-tag>
+                </div>
+              </template>
+              <template #right-icon>
+                <div class="action-buttons">
+                  <van-icon name="edit" size="18" color="#1989fa" @click.stop="openEditDialog(user)" style="margin-right: 12px;" />
+                  <van-icon name="lock" size="18" color="#07c160" @click.stop="openPasswordDialog(user)" style="margin-right: 12px;" />
+                  <van-icon v-if="user.id !== userStore.userInfo?.id" name="delete-o" size="18" color="#ee0a24" @click.stop="handleDelete(user)" />
+                </div>
+              </template>
+            </van-cell>
+          </van-cell-group>
+        </van-pull-refresh>
+      </div>
+    </template>
+
+    <!-- 退出登录 -->
+    <div class="logout-section">
+      <van-button type="danger" plain round block @click="handleLogout">退出登录</van-button>
     </div>
 
     <!-- 新增用户弹窗 -->
@@ -291,17 +302,14 @@ function handleLogout() {
                 <van-switch v-model="formData.can_manage_production" />
               </template>
             </van-cell>
-            <van-cell title="库存管理" center>
+            <van-cell title="可创建销售订单" center>
               <template #right-icon>
-                <van-switch v-model="formData.can_manage_inventory" />
+                <van-switch v-model="formData.can_create_sales" />
               </template>
             </van-cell>
-            <van-cell title="用户管理" center>
-              <template #label>
-                <span style="font-size: 12px; color: #999;">（仅管理员可用）</span>
-              </template>
+            <van-cell title="可创建生产订单" center>
               <template #right-icon>
-                <van-switch v-model="formData.can_manage_users" />
+                <van-switch v-model="formData.can_create_production" />
               </template>
             </van-cell>
           </van-cell-group>
@@ -363,17 +371,14 @@ function handleLogout() {
                 <van-switch v-model="editFormData.can_manage_production!" />
               </template>
             </van-cell>
-            <van-cell title="库存管理" center>
+            <van-cell title="可创建销售订单" center>
               <template #right-icon>
-                <van-switch v-model="editFormData.can_manage_inventory!" />
+                <van-switch v-model="editFormData.can_create_sales!" />
               </template>
             </van-cell>
-            <van-cell title="用户管理" center>
-              <template #label>
-                <span style="font-size: 12px; color: #999;">（仅管理员可用）</span>
-              </template>
+            <van-cell title="可创建生产订单" center>
               <template #right-icon>
-                <van-switch v-model="editFormData.can_manage_users!" />
+                <van-switch v-model="editFormData.can_create_production!" />
               </template>
             </van-cell>
           </van-cell-group>
@@ -428,6 +433,45 @@ function handleLogout() {
 .account-management {
   min-height: 100vh;
   background-color: #f7f8fa;
+}
+
+.profile-section {
+  background: #fff;
+  padding: 32px 16px 20px;
+  text-align: center;
+  margin-bottom: 16px;
+}
+
+.profile-avatar {
+  margin-bottom: 12px;
+}
+
+.profile-name {
+  font-size: 20px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 8px;
+}
+
+.profile-role {
+  margin-bottom: 12px;
+}
+
+.permission-tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.section-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: #999;
+  padding: 0 16px 8px;
+}
+
+.logout-section {
+  padding: 24px 16px;
 }
 
 .content {

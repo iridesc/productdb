@@ -20,9 +20,7 @@ export interface SalesOrderImage {
 export interface SalesOrder {
   id: ID
   order_no: string
-  customer_id?: ID
-  customer_name?: string
-  customer_address?: string
+  customer_info?: string
   express_no?: string
   express_confirmed?: boolean
   status: SalesOrderStatus
@@ -49,8 +47,7 @@ export interface SalesOrderItem {
 
 // 创建销售订单
 export interface SalesOrderCreate {
-  customer_name?: string
-  customer_address?: string
+  customer_info?: string
   express_no?: string
   remark?: string
   items?: {
@@ -62,8 +59,7 @@ export interface SalesOrderCreate {
 
 // 更新销售订单
 export interface SalesOrderUpdate {
-  customer_name?: string
-  customer_address?: string
+  customer_info?: string
   express_no?: string
   remark?: string
 }

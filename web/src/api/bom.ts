@@ -13,6 +13,7 @@ export interface BOMItem {
   scrap_rate: number
   is_optional: boolean
   note?: string
+  thumbnail_url?: string
 }
 
 export interface BOMCreate {

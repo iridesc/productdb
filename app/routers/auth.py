@@ -30,7 +30,21 @@ def login(
     access_token = create_access_token(
         data={"sub": user.username}, expires_delta=access_token_expires
     )
-    return {"access_token": access_token, "token_type": "bearer"}
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": {
+            "id": str(user.id),
+            "username": user.username,
+            "is_active": user.is_active,
+            "is_superuser": user.is_superuser,
+            "can_manage_materials": user.can_manage_materials,
+            "can_manage_sales": user.can_manage_sales,
+            "can_manage_production": user.can_manage_production,
+            "can_create_sales": user.can_create_sales,
+            "can_create_production": user.can_create_production,
+        }
+    }
 
 
 @router.post("/register")

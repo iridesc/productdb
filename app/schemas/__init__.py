@@ -138,49 +138,10 @@ class BOMWithProductResponse(BaseModel):
     scrap_rate: Decimal
     is_optional: bool
     note: Optional[str]
+    thumbnail_url: Optional[str] = None
 
     class Config:
         from_attributes = True
-
-
-# ==================== 客户 Schema ====================
-
-
-class CustomerBase(BaseModel):
-    name: str = Field(..., max_length=100)
-    code: str = Field(..., max_length=20)
-    contact: Optional[str] = Field(None, max_length=50)
-    phone: Optional[str] = Field(None, max_length=20)
-    email: Optional[str] = Field(None, max_length=100)
-    address: Optional[str] = Field(None, max_length=200)
-    is_active: bool = True
-
-
-class CustomerCreate(CustomerBase):
-    pass
-
-
-class CustomerUpdate(BaseModel):
-    name: Optional[str] = None
-    contact: Optional[str] = None
-    phone: Optional[str] = None
-    email: Optional[str] = None
-    address: Optional[str] = None
-    is_active: Optional[bool] = None
-
-
-class CustomerResponse(CustomerBase):
-    id: UUID
-    created_at: datetime
-    updated_at: datetime
-
-    class Config:
-        from_attributes = True
-
-
-class CustomerListResponse(BaseModel):
-    total: int
-    items: List[CustomerResponse]
 
 
 # ==================== 销售订单 Schema ====================
@@ -220,9 +181,7 @@ class SalesOrderImageResponse(BaseModel):
 
 
 class SalesOrderBase(BaseModel):
-    customer_id: Optional[UUID] = None
-    customer_name: Optional[str] = None
-    customer_address: Optional[str] = None
+    customer_info: Optional[str] = Field(None, max_length=500)
     express_no: Optional[str] = None
     express_confirmed: Optional[bool] = None
     order_date: date
@@ -235,9 +194,7 @@ class SalesOrderCreate(SalesOrderBase):
 
 
 class SalesOrderUpdate(BaseModel):
-    customer_id: Optional[UUID] = None
-    customer_name: Optional[str] = None
-    customer_address: Optional[str] = None
+    customer_info: Optional[str] = None
     express_no: Optional[str] = None
     delivery_date: Optional[date] = None
     remark: Optional[str] = None
@@ -250,7 +207,6 @@ class SalesOrderResponse(SalesOrderBase):
     total_amount: Decimal
     created_at: datetime
     updated_at: datetime
-    customer: Optional[CustomerResponse] = None
     items: List[SalesOrderItemResponse] = []
     images: List[SalesOrderImageResponse] = []
 
@@ -298,7 +254,7 @@ class ProductionOrderImageResponse(BaseModel):
 
 
 class YieldUpdate(BaseModel):
-    completed_quantity: Decimal = Field(..., gt=0)
+    completed_quantity: Decimal = Field(..., ge=0)
 
 
 class ProductionOrderBase(BaseModel):
@@ -315,6 +271,8 @@ class ProductionOrderCreate(ProductionOrderBase):
 
 
 class ProductionOrderUpdate(BaseModel):
+    product_id: Optional[UUID] = None
+    quantity: Optional[Decimal] = Field(None, gt=0)
     start_date: Optional[date] = None
     end_date: Optional[date] = None
     status: Optional[ProductionOrderStatusEnum] = None
@@ -324,7 +282,7 @@ class ProductionOrderUpdate(BaseModel):
 class ProductionOrderResponse(ProductionOrderBase):
     id: UUID
     order_no: str
-    completed_quantity: Decimal
+    completed_quantity: Optional[Decimal] = None
     status: ProductionOrderStatusEnum
     created_at: datetime
     updated_at: datetime
@@ -399,6 +357,8 @@ class UserBase(BaseModel):
     can_manage_production: bool = True
     can_manage_inventory: bool = True
     can_manage_users: bool = False
+    can_create_sales: bool = False
+    can_create_production: bool = False
 
 
 class UserCreate(UserBase):
@@ -415,6 +375,8 @@ class UserUpdate(BaseModel):
     can_manage_production: Optional[bool] = None
     can_manage_inventory: Optional[bool] = None
     can_manage_users: Optional[bool] = None
+    can_create_sales: Optional[bool] = None
+    can_create_production: Optional[bool] = None
 
 
 class UserResponse(UserBase):
@@ -433,6 +395,7 @@ class UserResponse(UserBase):
 class Token(BaseModel):
     access_token: str
     token_type: str
+    user: Optional[dict] = None
 
 
 class TokenData(BaseModel):

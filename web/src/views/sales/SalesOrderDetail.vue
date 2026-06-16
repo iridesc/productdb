@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { previewImage } from '@/utils/image'
 import { showConfirmDialog } from 'vant'
@@ -19,9 +19,13 @@ import {
 import { getMaterials } from '@/api/material'
 import type { SalesOrder, SalesOrderImage, SalesOrderImageType } from '@/types/sales'
 import { showMessage, handleError } from '@/utils/request'
+import { useUserStore } from '@/store/user'
 
 const route = useRoute()
 const router = useRouter()
+const userStore = useUserStore()
+const hasPermission = computed(() => userStore.hasPermission('can_manage_sales'))
+const isAdmin = computed(() => userStore.userInfo?.is_superuser === true)
 const loading = ref(false)
 const detail = ref<SalesOrder | null>(null)
 const id = route.params.id as string
@@ -35,19 +39,19 @@ const orderImages = ref<SalesOrderImage[]>([])
 const productShippingImages = computed(() => orderImages.value.filter(i => i.image_type === 'product_shipping'))
 const logisticsImages = computed(() => orderImages.value.filter(i => i.image_type === 'logistics'))
 const uploadingType = ref<SalesOrderImageType | ''>('')
-const productImageInputRef = ref<HTMLInputElement | null>(null)
-const logisticsImageInputRef = ref<HTMLInputElement | null>(null)
-const productsCollapsed = ref(false)
+
+// 相机拍照
+const showCamera = ref(false)
+const cameraImageType = ref<SalesOrderImageType | ''>('')
+const videoRef = ref<HTMLVideoElement | null>(null)
+const canvasRef = ref<HTMLCanvasElement | null>(null)
+let cameraStream: MediaStream | null = null
 
 // 四步工作流状态
 const step1Done = computed(() => detail.value?.items?.every(i => i.is_confirmed) ?? false)
 const step2Done = computed(() => productShippingImages.value.length > 0)
 const step3Done = computed(() => logisticsImages.value.length > 0)
 const step4Ready = computed(() => step1Done.value && step2Done.value && step3Done.value)
-
-function toggleProducts() {
-  productsCollapsed.value = !productsCollapsed.value
-}
 
 const statusMap: Record<string, string> = {
   draft: '草稿',
@@ -61,7 +65,7 @@ async function fetchDetail() {
   try {
     const data = await getSalesOrder(id) as any
     if (data) {
-      data.customer_info = data.customer_name || data.customer_address || ''
+      data.customer_info = data.customer_info || ''
     }
     detail.value = data
     await fetchOrderImages()
@@ -82,15 +86,50 @@ async function fetchOrderImages() {
   }
 }
 
-async function handleUploadImage(imageType: SalesOrderImageType, event: Event) {
-  const input = event.target as HTMLInputElement
-  if (!input.files || !input.files.length) return
-
-  const file = input.files[0]
-  if (!file.type.startsWith('image/')) {
-    showMessage('请选择图片文件')
-    return
+async function openCamera(imageType: SalesOrderImageType) {
+  cameraImageType.value = imageType
+  try {
+    cameraStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
+    })
+    showCamera.value = true
+    await nextTick()
+    if (videoRef.value) {
+      videoRef.value.srcObject = cameraStream
+    }
+  } catch (e) {
+    showMessage('无法打开相机，请检查权限设置')
   }
+}
+
+function closeCamera() {
+  if (cameraStream) {
+    cameraStream.getTracks().forEach(t => t.stop())
+    cameraStream = null
+  }
+  showCamera.value = false
+  cameraImageType.value = ''
+}
+
+async function capturePhoto() {
+  const video = videoRef.value
+  const canvas = canvasRef.value
+  if (!video || !canvas) return
+
+  canvas.width = video.videoWidth
+  canvas.height = video.videoHeight
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+  ctx.drawImage(video, 0, 0)
+
+  const blob = await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((b) => {
+      if (b) resolve(b)
+      else reject(new Error('capture failed'))
+    }, 'image/jpeg', 0.9)
+  })
+
+  const file = new File([blob], `camera_${Date.now()}.jpg`, { type: 'image/jpeg' })
 
   const sizeMB = (file.size / (1024 * 1024)).toFixed(2)
   if (file.size > 5 * 1024 * 1024) {
@@ -103,7 +142,10 @@ async function handleUploadImage(imageType: SalesOrderImageType, event: Event) {
     return
   }
 
+  const imageType = cameraImageType.value
   uploadingType.value = imageType
+  closeCamera()
+
   try {
     await uploadSalesOrderImage(id, file, imageType)
     showMessage('上传成功')
@@ -116,16 +158,7 @@ async function handleUploadImage(imageType: SalesOrderImageType, event: Event) {
     })
   } finally {
     uploadingType.value = ''
-    input.value = ''
   }
-}
-
-function triggerProductUpload() {
-  productImageInputRef.value?.click()
-}
-
-function triggerLogisticsUpload() {
-  logisticsImageInputRef.value?.click()
 }
 
 async function handleDeleteImage(imageId: string) {
@@ -156,7 +189,10 @@ async function loadProducts() {
 
 function initTempItems() {
   if (detail.value?.items) {
-    tempItems.value = [...detail.value.items]
+    tempItems.value = detail.value.items.map((item: any) => ({
+      ...item,
+      thumbnail_url: item.product?.thumbnail_url || item.thumbnail_url || ''
+    }))
   } else {
     tempItems.value = []
   }
@@ -182,8 +218,7 @@ async function saveEdit() {
   actionLoading.value = 'save'
   try {
     await updateSalesOrder(id, {
-      customer_name: detail.value.customer_info,
-      customer_address: detail.value.customer_info,
+      customer_info: detail.value.customer_info,
       express_no: detail.value.express_no,
       remark: detail.value.remark
     })
@@ -230,7 +265,8 @@ function addProduct(product: any) {
     quantity: 1,
     unit_price: product.price || 0,
     amount: product.price || 0,
-    is_confirmed: false
+    is_confirmed: false,
+    thumbnail_url: product.thumbnail_url || ''
   })
   showMessage('添加成功')
   showProductPicker.value = false
@@ -293,27 +329,51 @@ async function handleConfirmItem(itemId: string) {
   }
 }
 
+// 取消订单（仅管理员，两步确认）
+async function handleCancel() {
+  // 第一步：确认是否取消
+  try {
+    await showConfirmDialog({
+      title: '取消销售订单',
+      message: '确定要取消此订单吗？',
+      confirmButtonText: '继续取消',
+      cancelButtonText: '取消操作',
+    })
+  } catch {
+    return // 用户点击「取消操作」，关闭弹窗
+  }
+
+  // 第二步：选择是否退回库存
+  let returnInventory = true
+  try {
+    await showConfirmDialog({
+      title: '取消销售订单',
+      message: '已锁定物料库存是否退回？',
+      confirmButtonText: '退回库存并取消',
+      cancelButtonText: '不退回直接取消',
+    })
+  } catch {
+    returnInventory = false
+  }
+
+  actionLoading.value = 'cancel'
+  try {
+    await cancelSalesOrder(id, returnInventory)
+    showMessage(returnInventory ? '已取消，物料库存已退回' : '已取消，物料库存未退回')
+    fetchDetail()
+  } catch (e) {
+    showMessage(handleError(e))
+  } finally {
+    actionLoading.value = ''
+  }
+}
+
 async function handleComplete() {
   await showConfirmDialog({ title: '确认完成', message: '确定订单已完成吗？' })
   actionLoading.value = 'complete'
   try {
     await completeSalesOrder(id)
     showMessage('订单已完成')
-    fetchDetail()
-  } catch (e) {
-    const errorMessage = handleError(e)
-    showMessage(errorMessage)
-  } finally {
-    actionLoading.value = ''
-  }
-}
-
-async function handleCancel() {
-  await showConfirmDialog({ title: '确认取消', message: '确定要取消订单吗？已锁定的库存将自动退回' })
-  actionLoading.value = 'cancel'
-  try {
-    await cancelSalesOrder(id)
-    showMessage('订单已取消')
     fetchDetail()
   } catch (e) {
     const errorMessage = handleError(e)
@@ -348,6 +408,7 @@ onMounted(() => {
 
 <template>
   <div class="sales-detail-page">
+    <template v-if="hasPermission">
     <van-nav-bar :title="`销售订单｜${detail?.order_no || ''}`" left-arrow @click-left="router.back()">
       <template #right>
         <div class="nav-actions">
@@ -367,7 +428,7 @@ onMounted(() => {
         <div class="wf-line" :class="{ done: step1Done }"></div>
         <div class="wf-step" :class="{ done: step2Done, active: step1Done && !step2Done, locked: !step1Done }">
           <div class="wf-step-num">2</div>
-          <div class="wf-step-label">{{ step2Done ? '产品图已上传' : '产品发货图' }}</div>
+          <div class="wf-step-label">{{ step2Done ? '物料凭证图已上传' : '物料凭证图片' }}</div>
         </div>
         <div class="wf-line" :class="{ done: step2Done }"></div>
         <div class="wf-step" :class="{ done: step3Done, active: step2Done && !step3Done, locked: !step2Done }">
@@ -412,26 +473,20 @@ onMounted(() => {
         </div>
 
         <div class="card products-card">
-          <div class="card-header clickable" @click="toggleProducts">
-            <div class="card-title">
-              <van-icon
-                :name="productsCollapsed ? 'arrow' : 'arrow-down'"
-                size="14"
-                class="collapse-arrow"
-                :class="{ rotated: !productsCollapsed }"
-              />
-              物料列表
-            </div>
+          <div class="card-title">
+            <span v-if="detail.status === 'pending' && !step1Done" class="pulse-dot"></span>
+            物料列表
             <span v-if="detail.status === 'pending' && step1Done" class="step-done-tag">已全部检查</span>
-            <van-button
-              v-if="detail.status === 'draft' && isEditing"
-              size="small"
-              type="primary"
-              @click.stop="handleAddProduct"
-            >
-              添加物料
-            </van-button>
           </div>
+          <van-button
+            v-if="detail.status === 'draft' && isEditing"
+            size="small"
+            type="primary"
+            @click.stop="handleAddProduct"
+            style="margin-bottom: 12px"
+          >
+            添加物料
+          </van-button>
 
           <template v-if="isEditing">
             <div v-if="tempItems.length === 0" class="empty-text">暂无物料，请添加物料</div>
@@ -441,6 +496,15 @@ onMounted(() => {
                 :key="index"
                 class="product-item"
               >
+                <img
+                  v-if="item.thumbnail_url"
+                  class="product-thumb"
+                  :src="item.thumbnail_url"
+                  :alt="item.product_name"
+                />
+                <div v-else class="product-thumb product-thumb-placeholder">
+                  <van-icon name="photo-o" size="20" />
+                </div>
                 <div class="product-info">
                   <div class="product-name">{{ item.product_name }}</div>
                   <div class="product-meta">
@@ -464,7 +528,7 @@ onMounted(() => {
           </template>
 
           <template v-else>
-            <div v-show="!productsCollapsed">
+            <div>
               <div v-if="!detail.items || detail.items.length === 0" class="empty-text">
                 暂无物料{{ detail.status === 'draft' ? '，请在编辑模式下添加' : '' }}
               </div>
@@ -501,26 +565,18 @@ onMounted(() => {
                       <span class="pulse-dot"></span>
                       待检查
                     </van-button>
-                    <van-button
-                      v-else-if="item.is_confirmed"
-                      size="small"
-                      class="action-btn-done"
-                      disabled
-                    >
-                      已检查
-                    </van-button>
+                    <span v-else-if="item.is_confirmed" class="check-done-tag">已检查</span>
                   </div>
                 </div>
               </div>
             </div>
           </template>
 
-          <!-- 产品发货图片 — 物料列表下方 -->
+          <!-- 物料凭证图片 — 物料列表下方 -->
           <div v-if="(detail.status === 'pending' && step1Done) || (detail.status === 'completed' && productShippingImages.length > 0)" class="product-shipping-section">
             <div class="section-divider"></div>
             <div class="image-upload-label">
-              <span>产品发货图片</span>
-              <span v-if="detail.status === 'pending' && step1Done && !step2Done" class="pulse-dot" style="position:static;"></span>
+              <span><span v-if="detail.status === 'pending' && step1Done && !step2Done" class="pulse-dot"></span>物料凭证图片</span>
               <span class="image-count">{{ productShippingImages.length > 0 ? '已上传' : '待上传' }}</span>
             </div>
             <div class="image-upload-row">
@@ -541,35 +597,27 @@ onMounted(() => {
                   @click="handleDeleteImage(img.id)"
                 />
               </div>
-              <div v-if="detail.status === 'pending'" class="upload-trigger" @click="triggerProductUpload">
+              <div v-if="detail.status === 'pending'" class="upload-trigger" @click="openCamera('product_shipping')">
                 <van-icon name="plus" size="24" color="#999" />
-                <span class="upload-text">上传</span>
+                <span class="upload-text"><span v-if="!step2Done" class="pulse-dot"></span>拍照</span>
               </div>
-              <input
-                ref="productImageInputRef"
-                type="file"
-                accept="image/*"
-                style="display:none"
-                @change="handleUploadImage('product_shipping', $event)"
-              />
             </div>
           </div>
         </div>
 
         <!-- 物流单号 + 物流凭证图片 合并模块，仅 pending 状态 -->
         <div v-if="detail.status === 'pending'" class="card logistics-card" :class="{ 'full-width': true }">
-          <div class="card-title">物流信息</div>
-          <div class="info-row">
-            <span class="label">物流单号</span>
-            <span class="value">{{ detail.express_no || '-' }}</span>
+          <div class="card-title">
+            <span v-if="step2Done && !step3Done" class="pulse-dot"></span>
+            物流信息
           </div>
+          <div class="express-no-text">{{ detail.express_no || '-' }}</div>
 
-          <!-- 物流凭证图片 — step2（产品图上传）完成后解锁 -->
+          <!-- 物流凭证图片 — step2（物料凭证图上传）完成后解锁 -->
           <div v-if="step2Done" class="logistics-image-section">
             <div class="section-divider"></div>
             <div class="image-upload-label">
-              <span>物流凭证图片</span>
-              <span v-if="!step3Done && logisticsImages.length === 0" class="pulse-dot" style="position:static;"></span>
+              <span><span v-if="!step3Done && logisticsImages.length === 0" class="pulse-dot"></span>物流凭证图片</span>
               <span class="image-count">{{ logisticsImages.length > 0 ? '已上传 · 物流已确认' : '待上传' }}</span>
             </div>
             <div class="image-upload-row">
@@ -589,17 +637,10 @@ onMounted(() => {
                   @click="handleDeleteImage(img.id)"
                 />
               </div>
-              <div class="upload-trigger" @click="triggerLogisticsUpload">
+              <div class="upload-trigger" @click="openCamera('logistics')">
                 <van-icon name="plus" size="24" color="#999" />
-                <span class="upload-text">上传</span>
+                <span class="upload-text"><span v-if="!step3Done" class="pulse-dot"></span>拍照</span>
               </div>
-              <input
-                ref="logisticsImageInputRef"
-                type="file"
-                accept="image/*"
-                style="display:none"
-                @change="handleUploadImage('logistics', $event)"
-              />
             </div>
           </div>
         </div>
@@ -612,10 +653,7 @@ onMounted(() => {
         <!-- 物流信息 合并模块，仅 completed 状态 -->
         <div v-if="detail.status === 'completed' && (detail.express_no || logisticsImages.length > 0)" class="card logistics-card" :class="{ 'full-width': true }">
           <div class="card-title">物流信息</div>
-          <div class="info-row">
-            <span class="label">物流单号</span>
-            <span class="value">{{ detail.express_no || '-' }}</span>
-          </div>
+          <div class="express-no-text">{{ detail.express_no || '-' }}</div>
           <div v-if="logisticsImages.length > 0" class="logistics-image-section">
             <div class="section-divider"></div>
             <div class="image-upload-label">
@@ -681,16 +719,17 @@ onMounted(() => {
                 round
                 disabled
               >
-                {{ !step1Done ? '步骤① 请先检查所有物料' : !step2Done ? '步骤② 请上传产品发货图' : '步骤③ 请上传物流凭证图' }}
+                {{ !step1Done ? '步骤① 请先检查所有物料' : !step2Done ? '步骤② 请上传物料凭证图片' : '步骤③ 请上传物流图片' }}
               </van-button>
-            </div>
-            <div class="action-btns">
+              <!-- 仅管理员可取消 -->
               <van-button
+                v-if="isAdmin"
                 type="danger"
                 plain
                 block
                 :loading="actionLoading === 'cancel'"
                 @click="handleCancel"
+                style="margin-top: 12px"
               >
                 取消订单
               </van-button>
@@ -699,6 +738,27 @@ onMounted(() => {
         </template>
       </div>
     </div>
+
+    <!-- 相机拍照取景器 -->
+    <van-popup
+      v-model:show="showCamera"
+      position="bottom"
+      round
+      :style="{ width: '100%', height: '100%', background: '#000' }"
+      @click-overlay="closeCamera"
+    >
+      <div class="camera-viewfinder">
+        <video ref="videoRef" autoplay playsinline class="camera-video"></video>
+        <canvas ref="canvasRef" style="display:none"></canvas>
+        <div class="camera-controls">
+          <van-button round plain class="camera-cancel-btn" @click="closeCamera">取消</van-button>
+          <div class="camera-capture-btn" @click="capturePhoto">
+            <div class="capture-ring"></div>
+          </div>
+          <div style="width: 64px"></div>
+        </div>
+      </div>
+    </van-popup>
 
     <van-popup v-model:show="showProductPicker" position="bottom" round style="height: 70%">
       <div class="material-picker">
@@ -720,6 +780,8 @@ onMounted(() => {
         </div>
       </div>
     </van-popup>
+    </template>
+    <van-empty v-else description="暂无权限，请联系管理员" />
   </div>
 </template>
 
@@ -962,10 +1024,9 @@ onMounted(() => {
   font-weight: 500;
 }
 
-.action-btn-done {
-  background-color: #07c160 !important;
-  border-color: #07c160 !important;
-  color: #fff !important;
+.check-done-tag {
+  font-size: 12px;
+  color: #07c160;
   font-weight: 500;
 }
 
@@ -1015,6 +1076,13 @@ onMounted(() => {
   background: #e8f8e8;
   padding: 2px 8px;
   border-radius: 4px;
+}
+
+.express-no-text {
+  font-size: 16px;
+  color: #333;
+  font-weight: 500;
+  padding: 4px 0;
 }
 
 .express-done-tag {
@@ -1227,5 +1295,62 @@ onMounted(() => {
   font-size: 11px;
   color: #999;
   margin-top: 4px;
+}
+
+/* 相机取景器 */
+.camera-viewfinder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.camera-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  flex: 1;
+}
+
+.camera-controls {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24px 32px 48px;
+  background: linear-gradient(transparent, rgba(0,0,0,0.6));
+}
+
+.camera-cancel-btn {
+  color: #fff !important;
+  border-color: rgba(255,255,255,0.5) !important;
+  width: 64px;
+}
+
+.camera-capture-btn {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  border: 4px solid #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.15s;
+}
+
+.camera-capture-btn:active {
+  transform: scale(0.9);
+}
+
+.capture-ring {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: #fff;
 }
 </style>

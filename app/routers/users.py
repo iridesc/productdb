@@ -76,7 +76,9 @@ def create_user(
         can_manage_sales=user_data.can_manage_sales,
         can_manage_production=user_data.can_manage_production,
         can_manage_inventory=user_data.can_manage_inventory,
-        can_manage_users=user_data.can_manage_users
+        can_manage_users=user_data.can_manage_users,
+        can_create_sales=user_data.can_create_sales,
+        can_create_production=user_data.can_create_production
     )
     db.add(new_user)
     db.commit()
@@ -117,9 +119,6 @@ def update_user(
             )
         user.username = user_data.username
 
-    if user_data.full_name is not None:
-        user.full_name = user_data.full_name
-    
     if user_data.is_active is not None and current_user.is_superuser:
         user.is_active = user_data.is_active
     
@@ -143,7 +142,13 @@ def update_user(
     
     if user_data.can_manage_users is not None and current_user.is_superuser:
         user.can_manage_users = user_data.can_manage_users
-    
+
+    if user_data.can_create_sales is not None and current_user.is_superuser:
+        user.can_create_sales = user_data.can_create_sales
+
+    if user_data.can_create_production is not None and current_user.is_superuser:
+        user.can_create_production = user_data.can_create_production
+
     db.commit()
     db.refresh(user)
     return user
