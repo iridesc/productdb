@@ -7,6 +7,7 @@ import { showMessage } from '@/utils/request'
 import { getMaterials, deleteMaterial } from '@/api/material'
 import type { Material } from '@/types/material'
 import { handleError } from '@/utils/request'
+import { formatNumber } from '@/utils/number'
 
 const router = useRouter()
 const loading = ref(false)
@@ -15,6 +16,8 @@ const pagination = ref({ page: 1, page_size: 20, total: 0 })
 const keyword = ref('')
 const selectedCategory = ref<string[]>([])
 const showCategoryPopup = ref(false)
+const sortBy = ref('')
+const sortOrder = ref<'asc' | 'desc'>('asc')
 
 const statusMap: Record<string, string> = {
   product: '产品',
@@ -39,7 +42,9 @@ async function fetchList() {
       page: pagination.value.page,
       page_size: pagination.value.page_size,
       keyword: keyword.value || undefined,
-      category: selectedCategory.value.length > 0 ? selectedCategory.value.join(',') : undefined
+      category: selectedCategory.value.length > 0 ? selectedCategory.value.join(',') : undefined,
+      sort_by: sortBy.value || undefined,
+      sort_order: sortOrder.value || undefined
     })
     list.value = res.items
     pagination.value.total = res.total
@@ -90,6 +95,22 @@ function goCreate() {
 
 function goDetail(id: string) {
   router.push(`/materials/${id}`)
+}
+
+function toggleSort(field: string) {
+  if (sortBy.value === field) {
+    sortOrder.value = sortOrder.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    sortBy.value = field
+    sortOrder.value = 'asc'
+  }
+  pagination.value.page = 1
+  fetchList()
+}
+
+function sortIndicator(field: string): string {
+  if (sortBy.value !== field) return ''
+  return sortOrder.value === 'asc' ? ' ↑' : ' ↓'
 }
 
 onMounted(() => {
@@ -163,13 +184,13 @@ onMounted(() => {
           <table class="material-table">
             <thead>
               <tr>
-                <th>物料编码</th>
+                <th class="sortable" @click="toggleSort('code')">编码{{ sortIndicator('code') }}</th>
                 <th class="thumb-cell">图片</th>
-                <th>物料名称</th>
-                <th>分类</th>
-                <th>当前库存</th>
-                <th>安全库存</th>
-                <th>单位</th>
+                <th class="sortable" @click="toggleSort('name')">名称{{ sortIndicator('name') }}</th>
+                <th class="sortable" @click="toggleSort('category')">分类{{ sortIndicator('category') }}</th>
+                <th class="sortable" @click="toggleSort('current_stock')">库存{{ sortIndicator('current_stock') }}</th>
+                <th class="sortable" @click="toggleSort('safety_stock')">安全库存{{ sortIndicator('safety_stock') }}</th>
+                <th class="sortable" @click="toggleSort('unit')">单位{{ sortIndicator('unit') }}</th>
               </tr>
             </thead>
             <tbody>
@@ -195,9 +216,9 @@ onMounted(() => {
                   </span>
                 </td>
                 <td :class="{ 'low-stock': item.current_stock < item.safety_stock }">
-                  {{ item.current_stock }}
+                  {{ formatNumber(item.current_stock) }}
                 </td>
-                <td>{{ item.safety_stock }}</td>
+                <td>{{ formatNumber(item.safety_stock) }}</td>
                 <td class="center-cell">{{ item.unit }}</td>
               </tr>
             </tbody>
@@ -260,14 +281,24 @@ onMounted(() => {
   text-align: left;
   font-weight: 600;
   color: #666;
-  border-bottom: 2px solid #eee;
+  border-bottom: 2px solid #ddd;
   font-size: 13px;
   white-space: nowrap;
 }
 
+.material-table th.sortable {
+  cursor: pointer;
+  user-select: none;
+  transition: color 0.15s;
+}
+
+.material-table th.sortable:hover {
+  color: #1989fa;
+}
+
 .material-table td {
   padding: 12px 8px;
-  border-bottom: 1px solid #f5f5f5;
+  border-bottom: 1px solid #ebebeb;
   color: #333;
   vertical-align: middle;
   white-space: nowrap;
@@ -280,6 +311,14 @@ onMounted(() => {
 
 .material-table tbody tr:hover {
   background: #f8f9ff;
+}
+
+.material-table tbody tr:hover td {
+  color: #1a1a1a;
+}
+
+.material-table tbody tr:hover .code-cell {
+  color: #555;
 }
 
 .material-table tbody tr:last-child td {

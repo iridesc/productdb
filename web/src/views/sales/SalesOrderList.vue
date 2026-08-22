@@ -44,6 +44,15 @@ function getOrderThumbnails(order: SalesOrder): string[] {
   return images
 }
 
+// 获取订单所有物料编号
+function getOrderCodes(order: SalesOrder): string {
+  if (!order.items) return '-'
+  return order.items
+    .map(item => item.product?.code || '')
+    .filter(Boolean)
+    .join('、') || '-'
+}
+
 async function fetchList() {
   loading.value = true
   try {
@@ -96,8 +105,8 @@ onMounted(() => {
               <tr>
                 <th>订单号</th>
                 <th>状态</th>
-                <th>商品数</th>
                 <th>图片</th>
+                <th>物料编号</th>
                 <th>备注</th>
                 <th>创建时间</th>
                 <th>客户信息</th>
@@ -112,13 +121,13 @@ onMounted(() => {
                     {{ statusMap[item.status] }}
                   </span>
                 </td>
-                <td class="center-cell">{{ item.items?.length || 0 }}</td>
                 <td>
                   <div class="thumbnail-list">
                     <img v-for="(img, idx) in getOrderThumbnails(item)" :key="idx" :src="img" class="thumbnail-img" @click.stop="previewImage(img)" />
                     <span v-if="!getOrderThumbnails(item).length" class="no-image">-</span>
                   </div>
                 </td>
+                <td class="code-cell">{{ getOrderCodes(item) }}</td>
                 <td class="text-ellipsis" @click.stop="showFullText('备注', item.remark)">{{ item.remark || '-' }}</td>
                 <td>{{ item.created_at?.slice(0, 10) }}</td>
                 <td class="text-ellipsis" @click.stop="showFullText('客户信息', item.customer_info)">{{ item.customer_info || '-' }}</td>
@@ -178,14 +187,14 @@ onMounted(() => {
   text-align: left;
   font-weight: 600;
   color: #666;
-  border-bottom: 2px solid #eee;
+  border-bottom: 2px solid #ddd;
   font-size: 13px;
   white-space: nowrap;
 }
 
 .order-table td {
   padding: 12px 8px;
-  border-bottom: 1px solid #f5f5f5;
+  border-bottom: 1px solid #ebebeb;
   color: #333;
   vertical-align: middle;
   white-space: nowrap;
@@ -200,13 +209,17 @@ onMounted(() => {
   background: #f8f9ff;
 }
 
+.order-table tbody tr:hover td {
+  color: #1a1a1a;
+}
+
 .order-table tbody tr:last-child td {
   border-bottom: none;
 }
 
 .order-no-cell {
   font-weight: 600;
-  color: #1989fa;
+  color: #333;
   max-width: 100px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -245,6 +258,16 @@ onMounted(() => {
 .no-image {
   color: #999;
   font-size: 12px;
+}
+
+.code-cell {
+  font-size: 12px;
+  color: #666;
+  font-family: monospace;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .text-ellipsis {

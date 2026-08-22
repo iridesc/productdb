@@ -10,6 +10,7 @@ import type { Material, MaterialCategory } from '@/types/material'
 import type { ProductionOrder } from '@/types/production'
 import { showMessage, handleError } from '@/utils/request'
 import { previewImages } from '@/utils/image'
+import { formatNumber } from '@/utils/number'
 import { useUserStore } from '@/store/user'
 
 const route = useRoute()
@@ -86,8 +87,10 @@ const bomForm = ref({
 })
 
 const showMaterialPicker = ref(false)
-const materialOptions = ref<{ text: string; value: string }[]>([])
-const allMaterials = ref<Material[]>([])
+const materialSearchKeyword = ref('')
+const materialListLoading = ref(false)
+const materialSearchResults = ref<Material[]>([])
+let searchTimer: any = null
 
 const imageList = ref<MaterialImage[]>([])
 const uploading = ref(false)
@@ -181,19 +184,34 @@ async function handleCreatePO() {
   }
 }
 
-async function fetchMaterials() {
+async function loadMaterials(keyword?: string) {
+  materialListLoading.value = true
   try {
-    const res = await getMaterials({ page: 1, page_size: 100 })
-    allMaterials.value = res.items || []
-    materialOptions.value = (res.items || [])
-      .filter((m: Material) => m.id !== id)
-      .map((m: Material) => ({
-        text: `${m.code} - ${m.name}`,
-        value: m.id
-      }))
+    const params: any = { page: 1, page_size: 100 }
+    if (keyword) {
+      params.keyword = keyword
+    }
+    const res = await getMaterials(params)
+    materialSearchResults.value = (res.items || []).filter((m: Material) => m.id !== id)
   } catch (e) {
+  } finally {
+    materialListLoading.value = false
   }
 }
+
+function handleMaterialSearch(value: string) {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => {
+    loadMaterials(value)
+  }, 300)
+}
+
+watch(showMaterialPicker, (val) => {
+  if (val) {
+    materialSearchKeyword.value = ''
+    loadMaterials()
+  }
+})
 
 function onCategoryConfirm(value: any) {
   form.value.category = value.selectedOptions[0].value
@@ -207,7 +225,6 @@ function onUnitConfirm(value: any) {
 
 function handleEdit() {
   isEditing.value = true
-  fetchMaterials()
 }
 
 async function handleSave() {
@@ -317,7 +334,6 @@ function openAddBOM() {
     scrap_rate: 0,
     note: ''
   }
-  fetchMaterials()
   showBOMEdit.value = true
 }
 
@@ -333,9 +349,9 @@ function openEditBOM(bom: BOMItem) {
   showBOMEdit.value = true
 }
 
-function onMaterialConfirm(value: any) {
-  bomForm.value.material_id = value.selectedOptions[0].value
-  bomForm.value.material_name = value.selectedOptions[0].text
+function selectMaterial(material: Material) {
+  bomForm.value.material_id = material.id
+  bomForm.value.material_name = material.name
   showMaterialPicker.value = false
 }
 
@@ -466,7 +482,7 @@ watch(() => route.params.id, (newId) => {
 
 <template>
   <div class="material-detail-page">
-    <van-nav-bar :title="`物料｜${detail?.name || ''}`" left-arrow @click-left="router.back()">
+    <van-nav-bar :title="`物料｜${detail?.name || ''}`" left-arrow @click-left="router.push('/materials')">
       <template #right>
         <div class="nav-actions">
           <van-icon v-if="!isEditing && canManageMaterials" name="edit" size="20" @click="handleEdit" style="margin-right: 16px" />
@@ -529,19 +545,19 @@ watch(() => route.params.id, (newId) => {
             <div class="card-title">成本信息</div>
             <div class="info-row">
               <span class="label">售价</span>
-              <span class="value price">¥{{ detail.sale_price || 0 }}</span>
+              <span class="value price">¥{{ formatNumber(detail.sale_price) }}</span>
             </div>
             <div class="info-row">
               <span class="label">物料成本</span>
-              <span class="value">¥{{ detail.bom_cost || 0 }}</span>
+              <span class="value">¥{{ formatNumber(detail.bom_cost) }}</span>
             </div>
             <div class="info-row">
               <span class="label">其他成本</span>
-              <span class="value">¥{{ detail.other_cost || 0 }}</span>
+              <span class="value">¥{{ formatNumber(detail.other_cost) }}</span>
             </div>
             <div class="info-row total-cost">
               <span class="label">总成本</span>
-              <span class="value">¥{{ detail.total_cost || 0 }}</span>
+              <span class="value">¥{{ formatNumber(detail.total_cost) }}</span>
             </div>
           </div>
 
@@ -550,12 +566,12 @@ watch(() => route.params.id, (newId) => {
             <div class="info-row">
               <span class="label">当前库存</span>
               <span class="value" :class="{ 'low-stock': detail.current_stock < detail.safety_stock }">
-                {{ detail.current_stock }} {{ detail.unit }}
+                {{ formatNumber(detail.current_stock) }} {{ detail.unit }}
               </span>
             </div>
             <div class="info-row">
               <span class="label">安全库存</span>
-              <span class="value">{{ detail.safety_stock }} {{ detail.unit }}</span>
+              <span class="value">{{ formatNumber(detail.safety_stock) }} {{ detail.unit }}</span>
             </div>
           </div>
         </template>
@@ -606,12 +622,15 @@ watch(() => route.params.id, (newId) => {
             <div v-else class="bom-thumb bom-thumb-placeholder">
               <van-icon name="photo-o" size="16" />
             </div>
-            <div class="bom-info">
-              <div class="bom-name">{{ bom.material_name }}</div>
-              <div class="bom-code">{{ bom.material_code }}</div>
+            <div class="item-body">
+              <div class="item-header">
+                <span class="item-code">{{ bom.material_code }}</span>
+                <span class="item-stock">可用库存: <b>{{ formatNumber(bom.material_current_stock ?? 0) }}</b></span>
+                <span class="item-header-extra">用量: {{ formatNumber(bom.quantity) }} {{ detail.unit }}</span>
+              </div>
+              <div class="item-name">{{ bom.material_name }}</div>
             </div>
-            <div class="bom-qty">{{ Number(bom.quantity) }} {{ detail.unit }}</div>
-            <div v-if="canManageMaterials" class="bom-actions">
+            <div v-if="canManageMaterials" class="item-action" @click.stop>
               <van-icon name="edit" size="18" @click.stop="openEditBOM(bom)" />
               <van-icon name="delete-o" size="18" @click.stop="deleteBOMItem(bom)" />
             </div>
@@ -667,9 +686,37 @@ watch(() => route.params.id, (newId) => {
       </div>
     </van-popup>
 
-    <van-popup v-model:show="showMaterialPicker" position="bottom" round>
-      <van-picker title="选择物料" :columns="materialOptions" @confirm="onMaterialConfirm"
-        @cancel="showMaterialPicker = false" />
+    <van-popup v-model:show="showMaterialPicker" position="bottom" round style="height: 70%">
+      <div class="product-picker-header">
+        <div class="picker-title">选择物料</div>
+        <van-icon name="cross" @click="showMaterialPicker = false" />
+      </div>
+
+      <van-search
+        v-model="materialSearchKeyword"
+        placeholder="搜索物料名称或编码"
+        @update:model-value="handleMaterialSearch"
+        @search="handleMaterialSearch(materialSearchKeyword)"
+      />
+
+      <div class="product-list-container">
+        <van-loading v-if="materialListLoading" class="loading-center" />
+        <van-empty v-else-if="materialSearchResults.length === 0" description="暂无物料" />
+        <div
+          v-for="material in materialSearchResults"
+          :key="material.id"
+          class="product-item"
+          @click="selectMaterial(material)"
+        >
+          <img v-if="material.thumbnail_url" :src="material.thumbnail_url" class="product-item-thumb" />
+          <div v-else class="product-item-thumb product-item-thumb-placeholder"></div>
+          <div class="product-item-info">
+            <div class="product-item-name">{{ material.name }}</div>
+            <div class="product-item-code">编码：{{ material.code }}</div>
+          </div>
+          <div class="product-item-stock">库存: {{ formatNumber(material.current_stock ?? 0) }}</div>
+        </div>
+      </div>
     </van-popup>
 
     <van-popup v-model:show="showCreatePO" position="bottom" round style="height: auto">
@@ -835,9 +882,26 @@ watch(() => route.params.id, (newId) => {
   display: flex;
   align-items: center;
   padding: 12px 0;
-  border-bottom: 1px solid #f5f5f5;
+  border-bottom: 1px solid #ebebeb;
   cursor: pointer;
   gap: 10px;
+  transition: background-color 0.2s;
+}
+
+.bom-item:hover {
+  background: #f8f9ff;
+}
+
+.bom-item:hover .item-code {
+  color: #1a1a1a;
+}
+
+.bom-item:hover .item-name {
+  color: #444;
+}
+
+.bom-item:last-child {
+  border-bottom: none;
 }
 
 .bom-thumb {
@@ -857,34 +921,55 @@ watch(() => route.params.id, (newId) => {
   color: #ccc;
 }
 
-.bom-item:last-child {
-  border-bottom: none;
-}
-
-.bom-info {
+.item-body {
   flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
-.bom-name {
+.item-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.item-code {
   font-size: 14px;
+  font-weight: 600;
   color: #333;
+  font-family: monospace;
 }
 
-.bom-code {
+.item-stock {
   font-size: 12px;
   color: #999;
-  margin-top: 2px;
+  white-space: nowrap;
 }
 
-.bom-qty {
-  font-size: 14px;
+.item-stock b {
   color: #333;
-  margin-right: 12px;
 }
 
-.bom-actions {
+.item-header-extra {
+  font-size: 12px;
+  color: #999;
+  white-space: nowrap;
+  margin-left: auto;
+}
+
+.item-name {
+  font-size: 13px;
+  color: #666;
+}
+
+.item-action {
+  flex-shrink: 0;
   display: flex;
-  gap: 12px;
+  align-items: center;
+  gap: 16px;
   color: #666;
 }
 
@@ -974,8 +1059,21 @@ watch(() => route.params.id, (newId) => {
   display: flex;
   align-items: center;
   padding: 12px 0;
-  border-bottom: 1px solid #f5f5f5;
+  border-bottom: 1px solid #ebebeb;
   cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.po-item:hover {
+  background: #f8f9ff;
+}
+
+.po-item:hover .po-no {
+  color: #1a1a1a;
+}
+
+.po-item:hover .po-qty {
+  color: #666;
 }
 
 .po-item:last-child {
@@ -1046,5 +1144,81 @@ watch(() => route.params.id, (newId) => {
   color: #333;
   font-size: 14px;
   font-weight: 600;
+}
+
+/* 物料选择器弹窗 */
+.product-picker-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  border-bottom: 1px solid #eee;
+}
+
+.picker-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+}
+
+.product-list-container {
+  height: calc(70vh - 120px);
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+.product-item {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  background: #fff;
+  border-bottom: 1px solid #f5f5f5;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.product-item:active {
+  background-color: #f5f5f5;
+}
+
+.product-item-thumb {
+  width: 40px;
+  height: 40px;
+  border-radius: 4px;
+  object-fit: cover;
+  margin-right: 12px;
+  flex-shrink: 0;
+}
+
+.product-item-thumb-placeholder {
+  background: #f5f5f5;
+}
+
+.product-item-info {
+  flex: 1;
+}
+
+.product-item-name {
+  font-size: 14px;
+  color: #333;
+  margin-bottom: 4px;
+}
+
+.product-item-code {
+  font-size: 12px;
+  color: #999;
+}
+
+.product-item-stock {
+  font-size: 12px;
+  color: #999;
+  margin-left: 12px;
+  white-space: nowrap;
+}
+
+.loading-center {
+  display: flex;
+  justify-content: center;
+  padding: 40px 0;
 }
 </style>

@@ -61,6 +61,7 @@ def get_product_bom(
                 is_optional=bom.is_optional,
                 note=bom.note,
                 thumbnail_url=bom.material.thumbnail_url,
+                material_current_stock=bom.material.current_stock,
             )
         )
 

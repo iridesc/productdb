@@ -38,3 +38,14 @@ onMounted(async () => {
   background: #f5f5f5;
 }
 </style>
+
+<style>
+/* 图片预览不超出屏幕 */
+.van-image-preview__image .van-image__img,
+.van-image-preview__image > img {
+  max-width: 90vw !important;
+  max-height: 80vh !important;
+  width: auto !important;
+  height: auto !important;
+}
+</style>

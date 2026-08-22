@@ -70,6 +70,8 @@ def get_materials(
     category: Optional[str] = None,
     keyword: Optional[str] = None,
     is_active: Optional[bool] = None,
+    sort_by: Optional[str] = Query(None, description="排序字段"),
+    sort_order: Optional[str] = Query("asc", description="排序方向 asc/desc"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -86,6 +88,21 @@ def get_materials(
         )
     if is_active is not None:
         query = query.filter(Material.is_active == is_active)
+
+    # 排序
+    sortable_columns = {
+        'code': Material.code,
+        'name': Material.name,
+        'category': Material.category,
+        'current_stock': Material.current_stock,
+        'safety_stock': Material.safety_stock,
+        'unit': Material.unit,
+    }
+    if sort_by and sort_by in sortable_columns:
+        col = sortable_columns[sort_by]
+        query = query.order_by(col.desc()) if sort_order == 'desc' else query.order_by(col)
+    else:
+        query = query.order_by(Material.code)
 
     total = query.count()
     items = query.offset((page - 1) * page_size).limit(page_size).all()

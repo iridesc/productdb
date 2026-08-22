@@ -68,8 +68,26 @@ class InvenTreeClient:
         yield from self._get_paginated("/api/part/")
 
     def get_boms(self):
-        """Yield all BOM items from Inventree."""
+        """Yield all BOM items from Inventree (flat endpoint — may miss some items)."""
         yield from self._get_paginated("/api/bom/")
+
+    def get_boms_for_part(self, part_pk: int) -> list[dict]:
+        """Get BOM items for a specific part (reliable per-part endpoint)."""
+        return list(self._get_paginated("/api/bom/", params={"part": part_pk}))
+
+    def get_boms_per_part(self, part_pks: list[int], progress_every: int = 20) -> list[dict]:
+        """Fetch BOM items by iterating through each part. Reliable but slower."""
+        all_boms = []
+        total = len(part_pks)
+        start = time.time()
+        for i, pk in enumerate(part_pks, 1):
+            items = self.get_boms_for_part(pk)
+            all_boms.extend(items)
+            if i % progress_every == 0 or i == total:
+                elapsed = time.time() - start
+                logging.info(f"  BOM fetch [{i}/{total}] {i * 100 // total}% | "
+                             f"found {len(all_boms)} items so far | elapsed: {elapsed:.0f}s")
+        return all_boms
 
     def download_image(self, image_path: str) -> tuple[bytes, str] | None:
         """Download an image from Inventree. Returns (bytes, filename) or None."""
@@ -183,23 +201,33 @@ class ProductDBClient:
         resp.raise_for_status()
         return resp.json()
 
-    def create_bom(self, data: dict) -> dict | None:
-        """Create a BOM entry."""
+    def create_bom(self, data: dict) -> tuple[dict | None, str]:
+        """Create a BOM entry. Returns (result, status) where status is 'created', 'duplicate', or 'error'."""
         resp = self._request_with_retry(
             "POST",
             f"{self.base_url}/api/v1/boms",
             json=data,
         )
+        if resp.status_code == 201:
+            return resp.json(), "created"
+
+        # Not 201 — try to understand what happened
+        try:
+            detail = resp.json()
+        except Exception:
+            detail = resp.text
+
         if resp.status_code == 400:
-            # Duplicate or invalid
-            detail = resp.json().get("detail", resp.text)
-            if "已存在" in str(detail):
-                logging.debug(f"  BOM duplicate skipped: {data.get('product_id')} -> {data.get('material_id')}")
-                return None
-            logging.warning(f"  BOM create failed (400): {detail}")
-            return None
+            detail_str = detail.get("detail", str(detail)) if isinstance(detail, dict) else str(detail)
+            if "已存在" in detail_str:
+                logging.info(f"  BOM duplicate: prod={str(data.get('product_id'))[:8]}... → mat={str(data.get('material_id'))[:8]}...")
+                return None, "duplicate"
+            logging.warning(f"  BOM create failed (400): {detail_str}")
+            return None, "error"
+
+        # Other unexpected status (422, 500, etc.)
+        logging.warning(f"  BOM create unexpected HTTP {resp.status_code}: {detail}")
         resp.raise_for_status()
-        return resp.json()
 
     def get_boms_by_product(self, product_id: str) -> list:
         """Get existing BOM items for a product."""
@@ -233,10 +261,8 @@ def map_inventree_to_productdb(part: dict) -> dict:
     category_name = (part.get("category_name") or "").strip()
     category = "product" if category_name == "产品" else "component"
 
-    # Code: use IPN if present, otherwise "INV-{pk}"
+    # Code: use IPN if present, empty means auto-assign later as part-0001, part-0002, ...
     code = (part.get("IPN") or "").strip()
-    if not code:
-        code = f"INV-{part['pk']}"
 
     # Unit: use units field, default "个"
     unit = (part.get("units") or "").strip() or "个"
@@ -302,6 +328,16 @@ def parse_args():
         default=bool(os.environ.get("DRY_RUN")),
         help="Only show what would be done, do not make changes",
     )
+    parser.add_argument(
+        "--bom-only",
+        action="store_true",
+        default=bool(os.environ.get("BOM_ONLY")),
+        help="Only sync BOM items (skip material sync)",
+    )
+    parser.add_argument(
+        "--material-code", nargs="+", default=[],
+        help="只处理指定编码的物料（可用于 BOM 过滤），例如: --material-code 0010 0008",
+    )
     return parser.parse_args()
 
 
@@ -348,7 +384,7 @@ def main():
 
     # --- Fetch Inventree parts ---
     logging.info("Fetching parts from InvenTree...")
-    parts = list(inventree.get_parts())
+    parts = sorted(inventree.get_parts(), key=lambda p: p["pk"])
     logging.info(f"  Found {len(parts)} parts.")
 
     if not parts:
@@ -360,93 +396,144 @@ def main():
     existing = productdb.get_materials()
     logging.info(f"  Found {len(existing)} existing materials.")
 
-    # --- Sync ---
+    # --- Build PK→Code mapping (always needed for BOM lookup) ---
+    no_code_counter = 0
+    pk_to_code: dict[int, str] = {}  # Inventree PK → assigned code
+
+    for part in parts:
+        pk = part["pk"]
+        data = map_inventree_to_productdb(part)
+        code = data["code"]
+        if not code:
+            no_code_counter += 1
+            code = f"part-{no_code_counter:04d}"
+        pk_to_code[pk] = code
+
+    # --- Sync materials (skip in --bom-only mode) ---
     created = 0
     updated = 0
     skipped = 0
     images_ok = 0
     errors: list[tuple[str, str, str]] = []
 
-    logging.info(f"{'DRY RUN: ' if args.dry_run else ''}Syncing {len(parts)} parts...")
+    if args.bom_only:
+        logging.info("BOM-ONLY mode: skipping material sync.")
+    else:
+        logging.info(f"{'DRY RUN: ' if args.dry_run else ''}Syncing {len(parts)} parts...")
 
-    for i, part in enumerate(parts, 1):
-        pk = part["pk"]
-        data = map_inventree_to_productdb(part)
-        code = data["code"]
-        name = data["name"]
+        for i, part in enumerate(parts, 1):
+            pk = part["pk"]
+            data = map_inventree_to_productdb(part)
+            code = pk_to_code[pk]
+            name = data["name"]
 
-        try:
-            if code in existing:
-                # --- Update ---
-                material_id = existing[code]["id"]
-                has_images = existing[code]["has_images"]
-                if not args.dry_run:
-                    productdb.update_material(material_id, data)
-                updated += 1
-                action = "updated"
-            else:
-                # --- Create ---
-                if args.dry_run:
-                    material_id = "DRY-RUN"
+            try:
+                if code in existing:
+                    # --- Update ---
+                    material_id = existing[code]["id"]
+                    has_images = existing[code]["has_images"]
+                    if not args.dry_run:
+                        productdb.update_material(material_id, data)
+                    updated += 1
+                    action = "updated"
                 else:
-                    resp = productdb.create_material(data)
-                    if resp is None:
-                        skipped += 1
-                        continue
-                    material_id = resp["id"]
-                existing[code] = {"id": material_id, "has_images": False}
-                created += 1
-                has_images = False
-                action = "created"
+                    # --- Create ---
+                    if args.dry_run:
+                        material_id = "DRY-RUN"
+                    else:
+                        resp = productdb.create_material(data)
+                        if resp is None:
+                            skipped += 1
+                            continue
+                        material_id = resp["id"]
+                    existing[code] = {"id": material_id, "has_images": False}
+                    created += 1
+                    has_images = False
+                    action = "created"
 
-            # --- Image ---
-            image_path = part.get("image")
-            if image_path and not has_images and not args.skip_images:
-                if not args.dry_run:
-                    result = inventree.download_image(image_path)
-                    if result:
-                        image_bytes, filename = result
-                        productdb.upload_image(material_id, image_bytes, filename)
-                        existing[code]["has_images"] = True
-                        images_ok += 1
+                # --- Image ---
+                image_path = part.get("image")
+                if image_path and not has_images and not args.skip_images:
+                    if not args.dry_run:
+                        result = inventree.download_image(image_path)
+                        if result:
+                            image_bytes, filename = result
+                            productdb.upload_image(material_id, image_bytes, filename)
+                            existing[code]["has_images"] = True
+                            images_ok += 1
 
-            if i % 10 == 0 or i == len(parts):
-                logging.info(
-                    f"  [{i}/{len(parts)}] {action}: {code} | {name[:30]}"
-                )
+                if i % 10 == 0 or i == len(parts):
+                    logging.info(
+                        f"  [{i}/{len(parts)}] {action}: {code} | {name[:30]}"
+                    )
 
-        except Exception as e:
-            errors.append((code, name, str(e)))
-            logging.error(f"  [{i}/{len(parts)}] ERROR: {code} ({name[:20]}...): {e}")
+            except Exception as e:
+                errors.append((code, name, str(e)))
+                logging.error(f"  [{i}/{len(parts)}] ERROR: {code} ({name[:20]}...): {e}")
 
     # --- Sync BOM ---
     boms_created = 0
     boms_skipped = 0
+    boms_duplicate = 0
 
     if not args.dry_run:
-        # Build pk -> material_uuid lookup from the parts we just synced
+        # Build pk -> material_uuid lookup using codes assigned during sync
         pk_to_uuid: dict[int, str] = {}
         for part in parts:
             pk = part["pk"]
-            code = (part.get("IPN") or "").strip() or f"INV-{pk}"
-            if code in existing:
+            code = pk_to_code.get(pk)
+            if code and code in existing:
                 pk_to_uuid[pk] = existing[code]["id"]
 
         logging.info(f"Built PK→UUID lookup for {len(pk_to_uuid)} parts.")
 
-        # Fetch and sync BOM items
-        logging.info("Fetching BOM items from InvenTree...")
-        boms = list(inventree.get_boms())
+        # --- Fetch BOMs: use per-part endpoint (reliable) ---
+        filter_codes = set(args.material_code)
+
+        if filter_codes:
+            # Targeted sync: only fetch BOMs for matching part PKs
+            target_pks = [pk for pk, code in pk_to_code.items() if code in filter_codes]
+            not_found = filter_codes - set(pk_to_code.values())
+            if not_found:
+                logging.warning(f"  Codes not found in Inventree parts: {not_found}")
+            if not target_pks:
+                logging.error("  No matching parts found for the given material codes.")
+                return
+            logging.info(f"Fetching BOMs for {len(target_pks)} matching part(s) (codes: {filter_codes})...")
+            boms = inventree.get_boms_per_part(target_pks)
+        else:
+            # Full sync: iterate all parts to avoid missing any BOMs
+            logging.info("Fetching BOMs per part from InvenTree (this may take a while)...")
+            all_pks = [p["pk"] for p in parts]
+            boms = inventree.get_boms_per_part(all_pks)
+
         logging.info(f"  Found {len(boms)} BOM items.")
 
-        for bom in boms:
+        # Track skipped reasons for diagnosis
+        skipped_parent_missing: list[tuple[int, int, str]] = []  # (part_pk, sub_part_pk, reason)
+        skipped_component_missing: list[tuple[int, int, str]] = []
+
+        bom_total = len(boms)
+        bom_start_time = time.time()
+
+        for i, bom in enumerate(boms, 1):
             part_pk = bom["part"]
             sub_part_pk = bom["sub_part"]
+
             product_id = pk_to_uuid.get(part_pk)
             material_id = pk_to_uuid.get(sub_part_pk)
 
-            if not product_id or not material_id:
+            if not product_id and not material_id:
                 boms_skipped += 1
+                skipped_parent_missing.append((part_pk, sub_part_pk, "parent and component not found"))
+                continue
+            if not product_id:
+                boms_skipped += 1
+                skipped_parent_missing.append((part_pk, sub_part_pk, "parent not in ProductDB"))
+                continue
+            if not material_id:
+                boms_skipped += 1
+                skipped_component_missing.append((part_pk, sub_part_pk, "component not in ProductDB"))
                 continue
 
             bom_data = {
@@ -459,26 +546,56 @@ def main():
             }
 
             try:
-                result = productdb.create_bom(bom_data)
-                if result:
+                result, status = productdb.create_bom(bom_data)
+                if status == "created":
                     boms_created += 1
+                elif status == "duplicate":
+                    boms_duplicate += 1
                 else:
                     boms_skipped += 1
             except Exception as e:
                 boms_skipped += 1
-                logging.debug(f"  BOM error ({part_pk}->{sub_part_pk}): {e}")
+                logging.warning(f"  BOM error (part_pk={part_pk}→sub_part={sub_part_pk}): {e}")
 
-        logging.info(f"  BOM created: {boms_created}, skipped: {boms_skipped}")
+            # Progress every 50 items or at the end
+            if i % 50 == 0 or i == bom_total:
+                elapsed = time.time() - bom_start_time
+                pct = i * 100 // bom_total
+                logging.info(
+                    f"  BOM [{i}/{bom_total}] {pct}% | "
+                    f"created: {boms_created} dup: {boms_duplicate} skipped: {boms_skipped} | "
+                    f"elapsed: {elapsed:.0f}s"
+                )
+
+        if boms_skipped > 0:
+            logging.info(f"  --- Skipped BOM details ---")
+            if skipped_parent_missing:
+                logging.info(f"  Parent part not found ({len(skipped_parent_missing)} items):")
+                for ppk, spk, reason in skipped_parent_missing[:10]:
+                    logging.info(f"    part_pk={ppk} → sub_part_pk={spk} ({reason})")
+                if len(skipped_parent_missing) > 10:
+                    logging.info(f"    ... and {len(skipped_parent_missing) - 10} more")
+            if skipped_component_missing:
+                logging.info(f"  Component sub_part not found ({len(skipped_component_missing)} items):")
+                for ppk, spk, reason in skipped_component_missing[:10]:
+                    # Try to find part code for context
+                    part_code = pk_to_code.get(ppk, str(ppk))
+                    logging.info(f"    product: pk={ppk}({part_code}) → sub_part_pk={spk} not in ProductDB")
+                if len(skipped_component_missing) > 10:
+                    logging.info(f"    ... and {len(skipped_component_missing) - 10} more")
 
     # --- Summary ---
     logging.info("=" * 55)
-    logging.info(f"Sync {'DRY RUN ' if args.dry_run else ''}Complete!")
-    logging.info(f"  Materials created:  {created}")
-    logging.info(f"  Materials updated:  {updated}")
-    logging.info(f"  Materials skipped:  {skipped}")
-    if not args.skip_images:
-        logging.info(f"  Images uploaded:    {images_ok}")
+    mode_label = "BOM-ONLY " if args.bom_only else ("DRY RUN " if args.dry_run else "")
+    logging.info(f"Sync {mode_label}Complete!")
+    if not args.bom_only:
+        logging.info(f"  Materials created:  {created}")
+        logging.info(f"  Materials updated:  {updated}")
+        logging.info(f"  Materials skipped:  {skipped}")
+        if not args.skip_images:
+            logging.info(f"  Images uploaded:    {images_ok}")
     logging.info(f"  BOM items created:  {boms_created}")
+    logging.info(f"  BOM items duplicate:{boms_duplicate}")
     logging.info(f"  BOM items skipped:  {boms_skipped}")
     logging.info(f"  Errors:             {len(errors)}")
     if errors:

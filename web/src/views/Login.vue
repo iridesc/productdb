@@ -50,8 +50,8 @@ async function handleLogin() {
 <template>
   <div class="login-page">
     <div class="login-header">
-      <h1>ERP 管理系统</h1>
-      <p>物料生产管理</p>
+      <h1>ProductDB</h1>
+      <p>物料生产管理系统</p>
     </div>
     
     <van-form @submit="handleLogin" class="login-form">

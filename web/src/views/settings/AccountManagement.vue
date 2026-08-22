@@ -47,6 +47,12 @@ const passwordData = ref({
   confirmPassword: ''
 })
 
+// 编辑弹窗中的密码修改（选填）
+const editPasswordData = ref({
+  password: '',
+  confirmPassword: ''
+})
+
 onMounted(() => {
   loadUsers()
 })
@@ -91,6 +97,7 @@ function openEditDialog(user: User) {
     can_create_sales: user.can_create_sales,
     can_create_production: user.can_create_production
   }
+  editPasswordData.value = { password: '', confirmPassword: '' }
   showEditPopup.value = true
 }
 
@@ -123,6 +130,19 @@ async function handleEdit() {
   if (!currentUser.value) return
 
   try {
+    // 如果填写了新密码，先校验再修改
+    if (editPasswordData.value.password) {
+      if (editPasswordData.value.password.length < 6) {
+        showMessage('密码长度不能少于6位')
+        return
+      }
+      if (editPasswordData.value.password !== editPasswordData.value.confirmPassword) {
+        showMessage('两次输入的密码不一致')
+        return
+      }
+      await updatePassword(currentUser.value.id, editPasswordData.value.password)
+    }
+
     await updateUser(currentUser.value.id, editFormData.value)
     showSuccessToast('更新成功')
     showEditPopup.value = false
@@ -191,64 +211,89 @@ async function handleLogout() {
   <div class="account-management">
     <van-nav-bar title="我的" left-arrow @click-left="$router.back()" />
 
-    <!-- 我的信息 -->
-    <div class="profile-section">
-      <div class="profile-avatar">
-        <van-icon name="contact" size="48" color="#1989fa" />
+    <!-- 个人信息卡片 -->
+    <div class="profile-card">
+      <div class="profile-header">
+        <div class="profile-avatar">
+          <van-icon name="contact" size="44" color="#fff" />
+        </div>
+        <div class="profile-info">
+          <div class="profile-name">{{ userStore.userInfo?.username || '-' }}</div>
+          <div class="profile-meta">
+            <van-tag v-if="userStore.userInfo?.is_superuser" type="warning" size="small">超级管理员</van-tag>
+            <van-tag v-else type="primary" size="small">普通用户</van-tag>
+            <span class="profile-status">
+              <span class="status-dot" :class="{ active: userStore.userInfo?.is_active }"></span>
+              {{ userStore.userInfo?.is_active ? '正常' : '已禁用' }}
+            </span>
+          </div>
+        </div>
       </div>
-      <div class="profile-name">{{ userStore.userInfo?.username || '-' }}</div>
-      <div class="profile-role">
-        <van-tag v-if="userStore.userInfo?.is_superuser" type="warning" size="medium">超级管理员</van-tag>
-        <van-tag v-else type="primary" size="medium">普通用户</van-tag>
-      </div>
-      <div class="permission-tags">
-        <van-tag v-if="userStore.userInfo?.is_superuser" type="warning" size="small" style="margin: 2px">全部权限</van-tag>
-        <template v-else>
-          <van-tag v-if="userStore.userInfo?.can_manage_materials" type="primary" size="small" style="margin: 2px">物料管理</van-tag>
-          <van-tag v-if="userStore.userInfo?.can_manage_sales" type="primary" size="small" style="margin: 2px">销售订单</van-tag>
-          <van-tag v-if="userStore.userInfo?.can_manage_production" type="primary" size="small" style="margin: 2px">生产订单</van-tag>
-        </template>
+      <div class="profile-permissions">
+        <span v-if="userStore.userInfo?.can_manage_materials" class="perm-item">物料管理</span>
+        <span v-if="userStore.userInfo?.can_manage_sales" class="perm-item">销售订单</span>
+        <span v-if="userStore.userInfo?.can_manage_production" class="perm-item">生产订单</span>
       </div>
     </div>
 
     <!-- 用户管理 — 仅超级管理员可见 -->
     <template v-if="isSuperuser">
-      <div class="section-title">用户管理</div>
-      <div class="content">
-        <van-button size="small" type="primary" block @click="openCreateDialog" style="margin-bottom: 12px">
-          <van-icon name="plus" size="16" style="margin-right: 4px" />新增账号
-        </van-button>
+      <van-cell-group inset class="system-tools">
+        <van-cell title="系统 Token 管理" label="管理 MCP 等系统集成凭证" is-link to="/system-tokens">
+          <template #icon><van-icon name="key-o" class="system-tool-icon" /></template>
+        </van-cell>
+      </van-cell-group>
+      <div class="section-header">
+        <span class="section-title">用户管理</span>
+        <span class="section-count">{{ users.length }} 个账号</span>
+      </div>
+      <div class="user-list">
         <van-pull-refresh v-model="loading" @refresh="loadUsers">
           <van-loading v-if="loading && users.length === 0" class="loading" />
           <van-empty v-else-if="!loading && users.length === 0" description="暂无账号" />
-          <van-cell-group v-else inset>
-            <van-cell
+          <div v-else class="user-cards">
+            <div
               v-for="user in users"
               :key="user.id"
-              :title="user.username"
-              label=" "
+              class="user-card"
+              :class="{ 'is-self': user.id === userStore.userInfo?.id }"
             >
-              <template #icon>
-                <van-icon name="contact" size="24" style="margin-right: 10px; line-height: inherit;" />
-              </template>
-              <template #value>
-                <div class="user-actions">
-                  <van-tag :type="user.is_active ? 'success' : 'danger'" size="small">
-                    {{ user.is_active ? '启用' : '禁用' }}
-                  </van-tag>
-                  <van-tag v-if="user.is_superuser" type="warning" size="small" style="margin-left: 4px;">管理员</van-tag>
+              <div class="user-card-main">
+                <div class="user-avatar">
+                  <van-icon name="contact" size="24" color="#1989fa" />
                 </div>
-              </template>
-              <template #right-icon>
-                <div class="action-buttons">
-                  <van-icon name="edit" size="18" color="#1989fa" @click.stop="openEditDialog(user)" style="margin-right: 12px;" />
-                  <van-icon name="lock" size="18" color="#07c160" @click.stop="openPasswordDialog(user)" style="margin-right: 12px;" />
-                  <van-icon v-if="user.id !== userStore.userInfo?.id" name="delete-o" size="18" color="#ee0a24" @click.stop="handleDelete(user)" />
+                <div class="user-detail">
+                  <div class="user-name">
+                    {{ user.username }}
+                    <span v-if="user.id === userStore.userInfo?.id" class="self-tag">我</span>
+                  </div>
+                  <div class="user-tags">
+                    <van-tag :type="user.is_active ? 'success' : 'danger'" size="mini">
+                      {{ user.is_active ? '启用' : '禁用' }}
+                    </van-tag>
+                    <van-tag v-if="user.is_superuser" type="warning" size="mini">管理员</van-tag>
+                  </div>
                 </div>
-              </template>
-            </van-cell>
-          </van-cell-group>
+              </div>
+              <div class="user-card-actions">
+                <van-button size="mini" plain type="primary" icon="edit" @click="openEditDialog(user)">编辑</van-button>
+                <van-button size="mini" plain type="success" icon="lock" @click="openPasswordDialog(user)">密码</van-button>
+                <van-button
+                  v-if="user.id !== userStore.userInfo?.id"
+                  size="mini" plain type="danger" icon="delete-o"
+                  @click="handleDelete(user)"
+                >删除</van-button>
+              </div>
+            </div>
+          </div>
         </van-pull-refresh>
+      </div>
+
+      <!-- 新增按钮 -->
+      <div class="add-user-bar">
+        <van-button type="primary" block round @click="openCreateDialog">
+          <van-icon name="plus" size="18" />新增账号
+        </van-button>
       </div>
     </template>
 
@@ -354,6 +399,24 @@ async function handleLogout() {
         </van-cell-group>
 
         <div class="permission-section">
+          <div class="permission-title">修改密码（选填，不填则不修改）</div>
+          <van-cell-group inset>
+            <van-field
+              v-model="editPasswordData.password"
+              label="新密码"
+              placeholder="至少6位，留空则不修改"
+              type="password"
+            />
+            <van-field
+              v-model="editPasswordData.confirmPassword"
+              label="确认密码"
+              placeholder="请再次输入新密码"
+              type="password"
+            />
+          </van-cell-group>
+        </div>
+
+        <div class="permission-section">
           <div class="permission-title">模块权限</div>
           <van-cell-group inset>
             <van-cell title="物料管理" center>
@@ -433,67 +496,201 @@ async function handleLogout() {
 .account-management {
   min-height: 100vh;
   background-color: #f7f8fa;
+  padding-bottom: 30px;
 }
 
-.profile-section {
-  background: #fff;
-  padding: 32px 16px 20px;
-  text-align: center;
+/* ====== 个人信息卡片 ====== */
+.profile-card {
+  background: linear-gradient(135deg, #1989fa 0%, #36b1ff 100%);
+  margin: 16px;
+  border-radius: 16px;
+  padding: 20px;
+  color: #fff;
+}
+
+.profile-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
   margin-bottom: 16px;
 }
 
 .profile-avatar {
-  margin-bottom: 12px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.profile-info {
+  flex: 1;
+  min-width: 0;
 }
 
 .profile-name {
   font-size: 20px;
-  font-weight: 600;
-  color: #333;
-  margin-bottom: 8px;
+  font-weight: 700;
+  margin-bottom: 6px;
 }
 
-.profile-role {
-  margin-bottom: 12px;
-}
-
-.permission-tags {
+.profile-meta {
   display: flex;
+  align-items: center;
+  gap: 10px;
   flex-wrap: wrap;
-  justify-content: center;
 }
 
-.section-title {
-  font-size: 14px;
-  font-weight: 500;
-  color: #999;
-  padding: 0 16px 8px;
-}
-
-.logout-section {
-  padding: 24px 16px;
-}
-
-.content {
-  padding: 16px 0;
-}
-
-.loading {
-  display: flex;
-  justify-content: center;
-  padding: 50px 0;
-}
-
-.user-actions {
+.profile-status {
+  font-size: 12px;
+  opacity: 0.85;
   display: flex;
   align-items: center;
   gap: 4px;
 }
 
-.action-buttons {
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ff976a;
+}
+.status-dot.active {
+  background: #07c160;
+}
+
+.profile-permissions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.perm-item {
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.18);
+  padding: 3px 10px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+
+/* ====== 区域头部 ====== */
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 16px 10px;
+}
+
+.section-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #323233;
+}
+
+.section-count {
+  font-size: 13px;
+  color: #999;
+}
+
+/* ====== 用户列表 ====== */
+.user-list {
+  padding: 0 16px;
+}
+
+.user-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.user-card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 14px;
   display: flex;
   align-items: center;
-  margin-left: 8px;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.user-card.is-self {
+  border: 1px solid #dbeafe;
+  background: #f0f7ff;
+}
+
+.user-card-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.user-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #e8f2ff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.user-detail {
+  min-width: 0;
+}
+
+.user-name {
+  font-size: 15px;
+  font-weight: 500;
+  color: #323233;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.self-tag {
+  font-size: 10px;
+  color: #1989fa;
+  background: #e8f2ff;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-weight: 400;
+}
+
+.user-tags {
+  display: flex;
+  gap: 4px;
+}
+
+.user-card-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* ====== 新增按钮 ====== */
+.add-user-bar {
+  padding: 16px;
+}
+
+/* ====== 退出登录 ====== */
+.logout-section {
+  padding: 8px 16px 24px;
+}
+
+/* ====== 通用 ====== */
+.loading {
+  display: flex;
+  justify-content: center;
+  padding: 50px 0;
 }
 
 .popup-header {

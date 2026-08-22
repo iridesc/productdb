@@ -8,6 +8,9 @@ export function getMaterials(params: {
   page_size?: number
   keyword?: string
   is_active?: boolean
+  category?: string
+  sort_by?: string
+  sort_order?: string
 }) {
   return request.get<{ total: number; items: Material[] }>('/materials', { params })
 }

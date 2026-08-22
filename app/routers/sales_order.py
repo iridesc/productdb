@@ -42,9 +42,18 @@ def ensure_upload_dir():
 
 
 def generate_order_no(db: Session) -> str:
-    """生成订单号"""
-    total_order_count = db.query(SalesOrder).count() + 1
-    return f"S-{total_order_count:03d}"
+    """生成订单号（基于已有最大编号+1）"""
+    last = db.query(SalesOrder.order_no).order_by(
+        SalesOrder.order_no.desc()
+    ).first()
+    if last and last[0]:
+        try:
+            num = int(last[0].split('-')[1]) + 1
+        except (ValueError, IndexError):
+            num = 1
+    else:
+        num = 1
+    return f"S-{num:03d}"
 
 
 @router.get("", response_model=SalesOrderListResponse)
@@ -62,6 +71,15 @@ def get_sales_orders(
         selectinload(SalesOrder.items).selectinload(SalesOrderItem.product)
     )
 
+
+    # 无管理/创建权限的用户仅看到待处理和已完成的订单
+    if not current_user.is_superuser and not current_user.can_create_sales:
+        query = query.filter(
+            SalesOrder.status.in_([
+                SalesOrderStatusEnum.PENDING,
+                SalesOrderStatusEnum.COMPLETED,
+            ])
+        )
     if status:
         query = query.filter(SalesOrder.status == status)
     if start_date:
@@ -541,7 +559,6 @@ def complete_sales_order(
     db.commit()
     db.refresh(order)
     return order
-
 
 @router.put("/{order_id}/cancel", response_model=SalesOrderResponse)
 def cancel_sales_order(

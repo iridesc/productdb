@@ -139,6 +139,7 @@ class BOMWithProductResponse(BaseModel):
     is_optional: bool
     note: Optional[str]
     thumbnail_url: Optional[str] = None
+    material_current_stock: Optional[Decimal] = None
 
     class Config:
         from_attributes = True
