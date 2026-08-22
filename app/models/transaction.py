@@ -219,3 +219,23 @@ class User(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     roles = relationship("UserRole", back_populates="user", cascade="all, delete-orphan")
+
+
+class SystemToken(Base):
+    """Long-lived API token used by trusted system integrations such as MCP."""
+
+    __tablename__ = "system_tokens"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String(100), nullable=False)
+    description = Column(String(500), nullable=True)
+    token_hash = Column(String(64), unique=True, nullable=False, index=True)
+    token_prefix = Column(String(16), nullable=False)
+    is_active = Column(Boolean, nullable=False, default=True)
+    expires_at = Column(DateTime, nullable=True)
+    last_used_at = Column(DateTime, nullable=True)
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    creator = relationship("User")

@@ -131,6 +131,8 @@ app = FastAPI(
     ```
     Authorization: Bearer <token>
     ```
+
+    `<token>` 可以是网页登录获得的 JWT；系统集成也可以使用超级管理员签发的系统 Token。
     """,
     version="1.0.0",
     docs_url="/docs",

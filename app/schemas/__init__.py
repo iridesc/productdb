@@ -406,3 +406,39 @@ class TokenData(BaseModel):
 class LoginRequest(BaseModel):
     username: str
     password: str
+
+
+# ==================== 系统 Token Schema ====================
+
+
+class SystemTokenCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    description: Optional[str] = Field(None, max_length=500)
+    expires_at: Optional[datetime] = None
+
+
+class SystemTokenUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    description: Optional[str] = Field(None, max_length=500)
+    is_active: Optional[bool] = None
+    expires_at: Optional[datetime] = None
+
+
+class SystemTokenResponse(BaseModel):
+    id: UUID
+    name: str
+    description: Optional[str]
+    token_prefix: str
+    is_active: bool
+    expires_at: Optional[datetime]
+    last_used_at: Optional[datetime]
+    created_by: UUID
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class SystemTokenCreatedResponse(SystemTokenResponse):
+    token: str

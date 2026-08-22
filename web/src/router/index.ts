@@ -77,6 +77,12 @@ const routes: RouteRecordRaw[] = [
     name: 'AccountManagement',
     component: () => import('@/views/settings/AccountManagement.vue'),
     meta: { title: '账号管理', requiresAuth: true }
+  },
+  {
+    path: '/system-tokens',
+    name: 'SystemTokenManagement',
+    component: () => import('@/views/settings/SystemTokenManagement.vue'),
+    meta: { title: '系统 Token', requiresAuth: true }
   }
 ]
 

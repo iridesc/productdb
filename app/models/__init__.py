@@ -2,7 +2,7 @@ from .material import Material, MaterialCategory, MaterialCategoryEnum, Material
 from .transaction import (
     BOM, SalesOrder, SalesOrderImage, SalesOrderImageType, SalesOrderItem, SalesOrderStatusEnum,
     ProductionOrder, ProductionOrderImage, ProductionOrderItem, ProductionOrderStatusEnum,
-    InventoryTransaction, InventoryTransactionTypeEnum, User, Role, UserRole
+    InventoryTransaction, InventoryTransactionTypeEnum, User, Role, UserRole, SystemToken
 )
 
 __all__ = [
@@ -25,4 +25,5 @@ __all__ = [
     "User",
     "Role",
     "UserRole",
+    "SystemToken",
 ]
