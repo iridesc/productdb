@@ -53,6 +53,7 @@ def get_production_orders(
     product_id: Optional[UUID] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
+    keyword: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
@@ -78,6 +79,12 @@ def get_production_orders(
         query = query.filter(ProductionOrder.start_date >= start_date)
     if end_date:
         query = query.filter(ProductionOrder.end_date <= end_date)
+    if keyword:
+        query = query.join(ProductionOrder.product).filter(
+            ProductionOrder.order_no.contains(keyword)
+            | Material.code.contains(keyword)
+            | Material.name.contains(keyword)
+        )
 
     total = query.count()
     items = query.order_by(ProductionOrder.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
