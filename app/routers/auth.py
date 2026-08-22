@@ -4,9 +4,9 @@ from sqlalchemy.orm import Session
 from datetime import timedelta
 
 from app.database import get_db
-from app.schemas import Token, LoginRequest
+from app.schemas import Token
 from app.models import User
-from app.utils.auth import verify_password, create_access_token, get_password_hash, get_current_active_user
+from app.utils.auth import verify_password, create_access_token, get_current_active_user
 from app.config import settings
 
 router = APIRouter(prefix="/auth", tags=["认证"])
@@ -45,37 +45,6 @@ def login(
             "can_create_production": user.can_create_production,
         }
     }
-
-
-@router.post("/register")
-def register(
-    user_data: LoginRequest,
-    db: Session = Depends(get_db)
-):
-    """注册用户（仅用于初始化）"""
-    # 检查用户名是否存在
-    existing_user = db.query(User).filter(User.username == user_data.username).first()
-    if existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="用户名已存在"
-        )
-    
-    # 创建用户
-    hashed_password = get_password_hash(user_data.password)
-    new_user = User(
-        username=user_data.username,
-        email=f"{user_data.username}@productdb.local",
-        hashed_password=hashed_password,
-        full_name="管理员",
-        is_active=True,
-        is_superuser=True
-    )
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-    
-    return {"message": "用户创建成功", "user_id": str(new_user.id)}
 
 
 @router.get("/me/roles")

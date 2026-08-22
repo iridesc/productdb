@@ -90,7 +90,7 @@ async function handleSubmit() {
 <template>
   <div class="create-page">
     <template v-if="hasPermission">
-    <van-nav-bar title="创建销售订单" left-arrow @click-left="router.back()" />
+    <van-nav-bar title="创建销售订单" left-arrow @click-left="router.push('/sales-orders')" />
 
     <van-form @submit="handleSubmit">
       <!-- 客户信息 -->

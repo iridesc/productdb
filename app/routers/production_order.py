@@ -6,7 +6,6 @@ from sqlalchemy.orm import Session, selectinload
 from typing import Optional, List
 from uuid import UUID
 from datetime import date, datetime
-import random
 
 from app.database import get_db
 from app.models import (
@@ -32,10 +31,18 @@ def ensure_upload_dir():
 
 
 def generate_production_no(db: Session) -> str:
-    """生成生产单号: P-YYMMDD-XXXX"""
-    date_part = datetime.utcnow().strftime("%y%m%d")
-    rand_part = f"{random.randint(0, 9999):04d}"
-    return f"P-{date_part}-{rand_part}"
+    """生成生产单号（基于已有最大编号+1）"""
+    last = db.query(ProductionOrder.order_no).order_by(
+        ProductionOrder.order_no.desc()
+    ).first()
+    if last and last[0]:
+        try:
+            num = int(last[0].split('-')[1]) + 1
+        except (ValueError, IndexError):
+            num = 1
+    else:
+        num = 1
+    return f"P-{num:03d}"
 
 
 @router.get("", response_model=ProductionOrderListResponse)

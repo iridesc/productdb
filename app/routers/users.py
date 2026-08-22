@@ -123,6 +123,12 @@ def update_user(
         user.is_active = user_data.is_active
     
     if user_data.is_superuser is not None and current_user.is_superuser:
+        # 管理员不能去掉自己的超级管理员权限
+        if current_user.id == user_id and user_data.is_superuser == False:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="不能移除自己的超级管理员权限"
+            )
         user.is_superuser = user_data.is_superuser
     
     if user_data.can_view_dashboard is not None and current_user.is_superuser:

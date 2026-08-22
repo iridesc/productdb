@@ -55,7 +55,7 @@ async function handleSubmit() {
 <template>
   <div class="create-page">
     <template v-if="hasPermission">
-    <van-nav-bar title="创建生产订单" left-arrow @click-left="router.back()" />
+    <van-nav-bar title="创建生产订单" left-arrow @click-left="router.push('/production-orders')" />
 
     <van-notice-bar
       left-icon="info-o"

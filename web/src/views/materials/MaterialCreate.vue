@@ -73,7 +73,7 @@ async function handleSubmit() {
 <template>
   <div class="material-create-page">
     <template v-if="hasPermission">
-    <van-nav-bar title="创建物料" left-arrow @click-left="router.back()" />
+    <van-nav-bar title="创建物料" left-arrow @click-left="router.push('/materials')" />
 
     <van-form @submit="handleSubmit">
       <van-cell-group inset>

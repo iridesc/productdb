@@ -13,24 +13,29 @@ export default defineConfig({
     }),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.ico', 'robots.txt'],
+      includeAssets: ['favicon.png', 'apple-touch-icon.png'],
       manifest: {
-        name: 'ERP 物料管理系统',
-        short_name: 'ERP系统',
+        name: 'ProductDB',
+        short_name: 'ProductDB',
         description: '物料生产管理系统',
         theme_color: '#1989fa',
         background_color: '#ffffff',
         display: 'standalone',
+        lang: 'zh-CN',
+        start_url: '/',
+        scope: '/',
         icons: [
           {
             src: '/icon-192.png',
             sizes: '192x192',
-            type: 'image/png'
+            type: 'image/png',
+            purpose: 'any maskable'
           },
           {
             src: '/icon-512.png',
             sizes: '512x512',
-            type: 'image/png'
+            type: 'image/png',
+            purpose: 'any maskable'
           }
         ]
       }

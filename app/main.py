@@ -8,6 +8,7 @@ from app.config import settings
 from app.database import engine, Base, SessionLocal
 from app.routers import routers
 from app.models import Role, User, UserRole
+from app.utils.auth import get_password_hash
 import os
 
 UPLOAD_DIR = "/app/uploads"
@@ -43,6 +44,25 @@ def init_roles():
                 if not existing_role:
                     db.add(UserRole(user_id=user.id, role_code="admin"))
 
+        db.commit()
+    finally:
+        db.close()
+
+
+def init_default_admin():
+    """首次启动时检查系统中是否有超级管理员，没有则创建默认 admin / passwd"""
+    db = SessionLocal()
+    try:
+        existing = db.query(User).filter(User.is_superuser == True).first()
+        if existing:
+            return
+        admin = User(
+            username="admin",
+            hashed_password=get_password_hash("passwd"),
+            is_active=True,
+            is_superuser=True,
+        )
+        db.add(admin)
         db.commit()
     finally:
         db.close()
@@ -87,13 +107,14 @@ async def lifespan(app: FastAPI):
     os.makedirs(os.path.join(UPLOAD_DIR, "images"), exist_ok=True)
     Base.metadata.create_all(bind=engine)
     init_roles()
+    init_default_admin()
     migrate_customer_info()
     yield
     pass
 
 
 app = FastAPI(
-    title="ERP 物料生产管理系统",
+    title="ProductDB",
     description="""
     ## 功能模块
     
@@ -158,7 +179,7 @@ else:
     @app.get("/")
     def root():
         return {
-            "message": "ERP 物料生产管理系统 API",
+            "message": "ProductDB API",
             "version": "1.0.0",
             "docs": "/docs",
             "redoc": "/redoc"

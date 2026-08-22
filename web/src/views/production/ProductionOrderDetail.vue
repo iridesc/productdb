@@ -18,6 +18,7 @@ import {
 import type { ProductionOrder, ProductionOrderUpdate } from '@/types/production'
 import { showMessage, handleError } from '@/utils/request'
 import { previewImage } from '@/utils/image'
+import { formatNumber } from '@/utils/number'
 import { useUserStore } from '@/store/user'
 import ProductSelector from '@/components/ProductSelector.vue'
 
@@ -151,7 +152,7 @@ async function handlePublish() {
       const lines = shortages.map((s: any) => {
         const name = s.material_name || s.material_code || '未知物料'
         const shortfall = s.required - s.current_stock
-        return `<a href="/materials/${s.material_id}" target="_blank" style="color:#1989fa;text-decoration:none">${name}</a>：库存 <b>${s.current_stock}</b>，需要 <b>${s.required}</b>，缺少 <b style="color:#ff4d4f">${shortfall > 0 ? shortfall : 0}</b>`
+        return `<a href="/materials/${s.material_id}" target="_blank" style="color:#1989fa;font-weight:500;text-decoration:none">${name}</a>：库存 <b>${formatNumber(s.current_stock)}</b>，需要 <b>${formatNumber(s.required)}</b>，缺少 <b style="color:#ff4d4f">${formatNumber(shortfall > 0 ? shortfall : 0)}</b>`
       })
       showDialog({
         title: '物料库存不足',
@@ -390,7 +391,7 @@ onMounted(() => {
 
 <template>
   <div class="production-detail-page">
-    <van-nav-bar :title="`生产订单｜${detail?.order_no || ''}`" left-arrow @click-left="router.back()">
+    <van-nav-bar :title="`生产订单｜${detail?.order_no || ''}`" left-arrow @click-left="router.push('/production-orders')">
       <template v-if="detail?.status === 'draft' && !isEditing && canManageProduction" #right>
         <van-icon name="edit" size="20" @click="enterEdit" />
       </template>
@@ -421,6 +422,17 @@ onMounted(() => {
       </div>
 
       <div class="detail-grid">
+        <!-- 产品图片 -->
+        <div v-if="!isEditing && detail.product?.thumbnail_url" class="card product-image-card">
+          <div class="card-title">产品图片</div>
+          <img
+            :src="detail.product.thumbnail_url"
+            :alt="detail.product.name"
+            class="product-main-img"
+            @click="previewImage(detail.product.thumbnail_url)"
+          />
+        </div>
+
         <!-- 订单信息 -->
         <div class="card">
         <div class="card-title">
@@ -466,27 +478,27 @@ onMounted(() => {
         <!-- 查看模式 -->
         <template v-else>
           <div class="info-row">
-            <span class="label">订单号</span>
-            <span class="value">{{ detail.order_no }}</span>
-          </div>
-          <div class="info-row">
             <span class="label">状态</span>
             <span class="value status">{{ statusMap[detail.status] || detail.status }}</span>
+          </div>
+          <div class="info-row">
+            <span class="label">产品型号</span>
+            <span class="value code">{{ detail.product?.code || '—' }}</span>
           </div>
           <div class="info-row">
             <span class="label">产品</span>
             <span class="value">
               <a v-if="detail.product" :href="`/materials/${detail.product.id}`" target="_blank" class="link">{{ detail.product.name }}</a>
-              <span v-else>{{ detail.product?.name || '—' }}</span>
+              <span v-else>—</span>
             </span>
           </div>
           <div class="info-row">
             <span class="label">生产数量</span>
-            <span class="value">{{ Number(detail.quantity) }}</span>
+            <span class="value">{{ formatNumber(detail.quantity) }}</span>
           </div>
           <div class="info-row" v-if="detail.status === 'completed'">
             <span class="label">完成数量</span>
-            <span class="value">{{ Number(detail.completed_quantity) }}</span>
+            <span class="value">{{ formatNumber(detail.completed_quantity) }}</span>
           </div>
           <div class="info-row" v-if="detail.remark">
             <span class="label">备注</span>
@@ -516,16 +528,14 @@ onMounted(() => {
           <div v-else class="material-thumb material-thumb-placeholder">
             <van-icon name="photo-o" size="16" />
           </div>
-          <div class="material-info">
-            <a :href="`/materials/${item.material_id}`" target="_blank" class="link">{{ item.material_name }}</a>
-            <div class="material-quantity">
-              需求: {{ Number(item.quantity) }}
-              <span v-if="item.consumed_quantity > 0" class="consumed-info">
-                / 已消耗: {{ Number(item.consumed_quantity) }}
-              </span>
+          <div class="item-body">
+            <div class="item-header">
+              <a :href="`/materials/${item.material_id}`" target="_blank" class="link item-code">{{ item.material?.code || item.material_code || '—' }}</a>
+              <span class="item-header-extra">需求: {{ formatNumber(item.quantity) }}<span v-if="item.consumed_quantity > 0" class="consumed-info"> / 已消耗: {{ formatNumber(item.consumed_quantity) }}</span></span>
             </div>
+            <div class="item-name">{{ item.material?.name || item.material_name }}</div>
           </div>
-          <div class="material-action">
+          <div class="item-action">
             <van-button
               v-if="detail.status === 'pending' && item.consumed_quantity < item.quantity"
               size="small"
@@ -551,12 +561,12 @@ onMounted(() => {
         </div>
         <div class="info-row">
           <span class="label">计划数量</span>
-          <span class="value">{{ Number(detail.quantity) }}</span>
+          <span class="value">{{ formatNumber(detail.quantity) }}</span>
         </div>
         <div class="info-row">
           <span class="label">完成数量</span>
           <span class="value">
-            <template v-if="detail.status === 'completed' || step2Done">{{ Number(detail.completed_quantity) }}</template>
+            <template v-if="detail.status === 'completed' || step2Done">{{ formatNumber(detail.completed_quantity) }}</template>
             <van-stepper
               v-else
               v-model="yieldQuantity"
@@ -790,37 +800,88 @@ onMounted(() => {
   color: #1989fa;
 }
 
+.value.code {
+  font-family: monospace;
+  font-weight: 500;
+}
+
+.product-image-card {
+  text-align: center;
+}
+
+.product-main-img {
+  width: 100%;
+  max-height: 300px;
+  object-fit: contain;
+  border-radius: 6px;
+  cursor: pointer;
+  background: #f5f5f5;
+}
+
 .material-item {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 10px;
   padding: 12px 0;
-  border-bottom: 1px solid #f5f5f5;
+  border-bottom: 1px solid #ebebeb;
 }
 
 .material-item:last-child {
   border-bottom: none;
 }
 
-.material-name {
+.item-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.item-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.item-header-extra {
+  font-size: 12px;
+  color: #999;
+  white-space: nowrap;
+  margin-left: auto;
+}
+
+.item-code {
   font-size: 14px;
-  color: #333;
+  font-weight: 600;
+  font-family: monospace;
 }
 
 .link {
   color: #1989fa;
+  font-weight: 500;
   text-decoration: none;
-  font-size: 14px;
 }
 
-.link:hover {
-  text-decoration: underline;
-}
-
-.material-quantity {
+.item-stock {
   font-size: 12px;
   color: #999;
-  margin-top: 4px;
+  white-space: nowrap;
+}
+
+.item-stock b {
+  color: #333;
+}
+
+.item-name {
+  font-size: 13px;
+  color: #666;
+}
+
+.item-action {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
 }
 
 .action-btns {

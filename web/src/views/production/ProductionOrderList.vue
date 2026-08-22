@@ -6,6 +6,7 @@ import { getProductionOrders } from '@/api/production'
 import type { ProductionOrder } from '@/types/production'
 import { handleError } from '@/utils/request'
 import { previewImage } from '@/utils/image'
+import { formatNumber } from '@/utils/number'
 import { useUserStore } from '@/store/user'
 
 const router = useRouter()
@@ -82,9 +83,9 @@ onMounted(() => {
                 <th>订单号</th>
                 <th>状态</th>
                 <th>产品图片</th>
+                <th>产品型号</th>
                 <th>产品名称</th>
                 <th>数量</th>
-                <th>物料种类</th>
                 <th>备注</th>
                 <th>创建时间</th>
               </tr>
@@ -107,9 +108,9 @@ onMounted(() => {
                   />
                   <span v-else class="no-img">—</span>
                 </td>
+                <td class="code-cell">{{ item.product?.code || '—' }}</td>
                 <td>{{ item.product?.name || '—' }}</td>
-                <td class="center-cell">{{ Number(item.quantity) }}</td>
-                <td class="center-cell">{{ item.items?.length || 0 }} 种</td>
+                <td class="center-cell">{{ formatNumber(item.quantity) }}</td>
                 <td class="remark-cell">{{ item.remark || '—' }}</td>
                 <td>{{ item.created_at?.slice(0, 10) }}</td>
               </tr>
@@ -167,13 +168,13 @@ onMounted(() => {
   text-align: left;
   font-weight: 600;
   color: #666;
-  border-bottom: 2px solid #eee;
+  border-bottom: 2px solid #ddd;
   font-size: 13px;
 }
 
 .order-table td {
   padding: 14px 10px;
-  border-bottom: 1px solid #f5f5f5;
+  border-bottom: 1px solid #ebebeb;
   color: #333;
   vertical-align: middle;
 }
@@ -187,13 +188,17 @@ onMounted(() => {
   background: #f8f9ff;
 }
 
+.order-table tbody tr:hover td {
+  color: #1a1a1a;
+}
+
 .order-table tbody tr:last-child td {
   border-bottom: none;
 }
 
 .order-no-cell {
   font-weight: 600;
-  color: #1989fa;
+  color: #333;
 }
 
 .center-cell {
@@ -224,6 +229,13 @@ onMounted(() => {
 .no-img {
   color: #ccc;
   font-size: 12px;
+}
+
+.code-cell {
+  font-size: 13px;
+  color: #333;
+  font-family: monospace;
+  font-weight: 500;
 }
 
 .remark-cell {

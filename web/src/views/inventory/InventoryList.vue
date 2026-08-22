@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { showMessage } from '@/utils/request'
 import request from '@/utils/request'
 import { handleError } from '@/utils/request'
+import { formatNumber } from '@/utils/number'
 
 const router = useRouter()
 const loading = ref(false)
@@ -54,7 +55,7 @@ onMounted(() => {
 
 <template>
   <div class="inventory-page">
-    <van-nav-bar title="库存管理" left-arrow @click-left="router.back()" />
+    <van-nav-bar title="库存管理" left-arrow @click-left="router.push('/materials')" />
 
     <!-- 搜索 -->
     <div class="search-bar">
@@ -87,11 +88,11 @@ onMounted(() => {
           </div>
           <div class="item-stock">
             <div class="stock-num" :class="{ 'low-stock': item.current_stock < item.safety_stock }">
-              {{ item.current_stock }} {{ item.unit }}
+              {{ formatNumber(item.current_stock) }} {{ item.unit }}
             </div>
             <div class="stock-label">库存</div>
             <div v-if="item.current_stock < item.safety_stock" class="low-stock-tag">
-              低于安全库存 {{ item.safety_stock }}
+              低于安全库存 {{ formatNumber(item.safety_stock) }}
             </div>
           </div>
         </div>
@@ -129,6 +130,22 @@ onMounted(() => {
   border-radius: 8px;
   padding: 16px;
   margin-bottom: 12px;
+  cursor: pointer;
+  border: 1px solid #eee;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+
+.list-item:hover {
+  background: #f8f9ff;
+  border-color: #d9d9d9;
+}
+
+.list-item:hover .item-name {
+  color: #1a1a1a;
+}
+
+.list-item:hover .item-code {
+  color: #666;
 }
 
 .item-info {

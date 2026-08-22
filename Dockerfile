@@ -2,21 +2,16 @@ FROM docker.m.daocloud.io/library/python:3.11-slim
 
 WORKDIR /app
 
-# 安装系统依赖
-RUN apt-get update && apt-get install -y \
-    gcc \
-    libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-# 安装 Python 依赖
+# 安装 Python 依赖（放在最前面，仅 requirements.txt 变更才重新安装）
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 复制应用代码
+# 复制应用代码 + 迁移脚本
 COPY app/ ./app/
-COPY requirements.txt .
 COPY alembic.ini .
-RUN if [ -d "alembic" ]; then cp -r alembic/ ./alembic/; fi
+
+# 复制前端构建产物（变化最频繁，放最后以利用上层缓存）
+COPY web/dist/ ./web/dist/
 
 EXPOSE 8000
 

@@ -16,9 +16,10 @@ import {
   uploadSalesOrderImage,
   deleteSalesOrderImage
 } from '@/api/sales'
-import { getMaterials } from '@/api/material'
+import ProductSelector from '@/components/ProductSelector.vue'
 import type { SalesOrder, SalesOrderImage, SalesOrderImageType } from '@/types/sales'
 import { showMessage, handleError } from '@/utils/request'
+import { formatNumber } from '@/utils/number'
 import { useUserStore } from '@/store/user'
 
 const route = useRoute()
@@ -31,10 +32,8 @@ const detail = ref<SalesOrder | null>(null)
 const id = route.params.id as string
 const actionLoading = ref('')
 const isEditing = ref(false)
-const products = ref<any[]>([])
 const showProductPicker = ref(false)
 const tempItems = ref<any[]>([])
-const materialSearchText = ref('')
 const orderImages = ref<SalesOrderImage[]>([])
 const productShippingImages = computed(() => orderImages.value.filter(i => i.image_type === 'product_shipping'))
 const logisticsImages = computed(() => orderImages.value.filter(i => i.image_type === 'logistics'))
@@ -175,17 +174,6 @@ async function handleDeleteImage(imageId: string) {
   }
 }
 
-async function loadProducts() {
-  try {
-    const res: any = await getMaterials({ page_size: 100 })
-    products.value = res.items || []
-  } catch (e) {
-    console.error('Load products error:', e)
-    const errorMessage = handleError(e)
-    showMessage(errorMessage)
-    products.value = []
-  }
-}
 
 function initTempItems() {
   if (detail.value?.items) {
@@ -200,7 +188,6 @@ function initTempItems() {
 
 function startEdit() {
   isEditing.value = true
-  loadProducts()
   initTempItems()
 }
 
@@ -243,10 +230,7 @@ async function saveEdit() {
   }
 }
 
-async function handleAddProduct() {
-  if (products.value.length === 0) {
-    await loadProducts()
-  }
+function handleAddProduct() {
   showProductPicker.value = true
 }
 
@@ -269,7 +253,6 @@ function addProduct(product: any) {
     thumbnail_url: product.thumbnail_url || ''
   })
   showMessage('添加成功')
-  showProductPicker.value = false
 }
 
 function removeTempProduct(index: number) {
@@ -289,16 +272,7 @@ const tempTotalAmount = computed(() => {
   }, 0)
 })
 
-const filteredProducts = computed(() => {
-  if (!materialSearchText.value) return products.value
-  const keyword = materialSearchText.value.toLowerCase()
-  return products.value.filter((p: any) =>
-    p.name?.toLowerCase().includes(keyword) ||
-    p.code?.toLowerCase().includes(keyword)
-  )
-})
 
-function onSearchMaterials() {}
 
 async function handlePublish() {
   await showConfirmDialog({ title: '确认发布', message: '发布后将锁定库存并进入待处理状态' })
@@ -409,7 +383,7 @@ onMounted(() => {
 <template>
   <div class="sales-detail-page">
     <template v-if="hasPermission">
-    <van-nav-bar :title="`销售订单｜${detail?.order_no || ''}`" left-arrow @click-left="router.back()">
+    <van-nav-bar :title="`销售订单｜${detail?.order_no || ''}`" left-arrow @click-left="router.push('/sales-orders')">
       <template #right>
         <div class="nav-actions">
           <van-icon v-if="detail?.status === 'draft' && !isEditing" name="edit" size="20" @click="startEdit" />
@@ -467,7 +441,7 @@ onMounted(() => {
             </div>
             <div class="info-row total-amount">
               <span class="label">总金额</span>
-              <span class="value price">¥{{ detail.total_amount }}</span>
+              <span class="value price">¥{{ formatNumber(detail.total_amount) }}</span>
             </div>
           </template>
         </div>
@@ -505,13 +479,14 @@ onMounted(() => {
                 <div v-else class="product-thumb product-thumb-placeholder">
                   <van-icon name="photo-o" size="20" />
                 </div>
-                <div class="product-info">
-                  <div class="product-name">{{ item.product_name }}</div>
-                  <div class="product-meta">
-                    ¥{{ item.unit_price }}
+                <div class="item-body">
+                  <div class="item-header">
+                    <span class="item-code">{{ item.product?.code || '—' }}</span>
+                    <span class="item-stock">¥{{ formatNumber(item.unit_price) }} / 件</span>
                   </div>
+                  <div class="item-name">{{ item.product_name }}</div>
                 </div>
-                <div class="product-actions">
+                <div class="item-action edit-actions">
                   <van-stepper
                     v-model="item.quantity"
                     :min="1"
@@ -522,7 +497,7 @@ onMounted(() => {
               </div>
               <div class="total-row">
                 <span>合计</span>
-                <span class="total-price">¥{{ tempTotalAmount }}</span>
+                <span class="total-price">¥{{ formatNumber(tempTotalAmount) }}</span>
               </div>
             </div>
           </template>
@@ -548,13 +523,15 @@ onMounted(() => {
                   <div v-else class="product-thumb product-thumb-placeholder">
                     <van-icon name="photo-o" size="20" />
                   </div>
-                  <div class="product-info">
-                    <div class="product-name">{{ item.product?.name || item.product_name }}</div>
-                    <div class="product-meta">
-                      {{ item.quantity }} × ¥{{ item.unit_price }} = ¥{{ item.amount }}
-                    </div>
-                  </div>
-                  <div class="product-action">
+                  <div class="item-body">
+                    <div class="item-header">
+                      <span class="item-code">{{ item.product?.code || '—' }}</span>
+                      <span v-if="detail.status === 'draft'" class="item-stock">可用库存: <b>{{ formatNumber(item.product?.current_stock ?? 0) }}</b></span>
+                      <span class="item-qty-tag">数量：{{ Math.round(Number(item.quantity)) }}</span>
+                   </div>
+                   <div class="item-name">{{ item.product?.name || item.product_name }}</div>
+                 </div>
+                  <div class="item-action">
                     <van-button
                       v-if="detail.status === 'pending' && !item.is_confirmed"
                       size="small"
@@ -760,26 +737,11 @@ onMounted(() => {
       </div>
     </van-popup>
 
-    <van-popup v-model:show="showProductPicker" position="bottom" round style="height: 70%">
-      <div class="material-picker">
-        <van-search v-model="materialSearchText" placeholder="搜索物料名称或编码" @search="onSearchMaterials" @clear="onSearchMaterials" />
-        <div class="material-list">
-          <van-cell
-            v-for="item in filteredProducts"
-            :key="item.id"
-            :title="item.name"
-            :label="`${item.code} | ¥${item.price || 0} | 库存: ${item.current_stock || 0}`"
-            clickable
-            @click="addProduct(item)"
-          >
-            <template #right-icon>
-              <van-icon name="plus" size="18" color="#1890ff" />
-            </template>
-          </van-cell>
-          <div v-if="filteredProducts.length === 0" class="empty-text">无匹配物料</div>
-        </div>
-      </div>
-    </van-popup>
+    <!-- 商品选择器（带搜索） -->
+    <ProductSelector
+      v-model="showProductPicker"
+      @select="addProduct"
+    />
     </template>
     <van-empty v-else description="暂无权限，请联系管理员" />
   </div>
@@ -910,7 +872,7 @@ onMounted(() => {
   align-items: center;
   gap: 10px;
   padding: 12px 0;
-  border-bottom: 1px solid #f5f5f5;
+  border-bottom: 1px solid #ebebeb;
 }
 
 .product-item:last-child {
@@ -933,36 +895,67 @@ onMounted(() => {
   color: #ccc;
 }
 
-.product-info {
+.item-body {
   flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
-.product-name {
-  font-size: 14px;
-  color: #333;
-  margin-bottom: 4px;
-}
-
-.product-meta {
-  font-size: 12px;
-  color: #999;
-}
-
-.product-action {
+.item-header {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.product-actions {
+.item-code {
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+  font-family: monospace;
+}
+
+.item-stock {
+  font-size: 12px;
+  color: #999;
+  white-space: nowrap;
+}
+
+.item-stock b {
+  color: #333;
+}
+
+
+.item-qty-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 100%;
+  margin-left: auto;
+  font-size: 14px;
+  font-weight: 600;
+  color: #ff4d4f;
+}
+
+.item-name {
+  font-size: 13px;
+  color: #666;
+}
+
+.item-action {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 12px;
+}
+
+.item-action.edit-actions {
+  gap: 8px;
 }
 
 .remove-btn {
   color: #ff4d4f;
   cursor: pointer;
+  font-size: 18px;
 }
 
 .description {
@@ -1004,17 +997,6 @@ onMounted(() => {
 
 .total-price {
   color: #ff4d4f;
-}
-
-.material-picker {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-}
-
-.material-list {
-  flex: 1;
-  overflow-y: auto;
 }
 
 .action-btn-blue {

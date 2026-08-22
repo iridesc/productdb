@@ -30,17 +30,19 @@ watch(() => route.path, (path) => {
   }
 }, { immediate: true })
 
-function handleChange(index: number) {
+function handleTabClick(index: number) {
+  active.value = index
   router.push(tabItems.value[index].path)
 }
 </script>
 
 <template>
-  <van-tabbar v-model="active" safe-area-inset-bottom @change="handleChange">
+  <van-tabbar :model-value="active" safe-area-inset-bottom>
     <van-tabbar-item
       v-for="(item, index) in tabItems"
       :key="index"
       :icon="item.icon"
+      @click="handleTabClick(index)"
     >
       {{ item.text }}
     </van-tabbar-item>
