@@ -2,12 +2,8 @@ services:
   postgres:
     image: docker.m.daocloud.io/library/postgres:15-alpine
     container_name: productdb-postgres
+    restart: always
     environment:
-      HTTP_PROXY: ""
-      HTTPS_PROXY: ""
-      http_proxy: ""
-      https_proxy: ""
-      NO_PROXY: "*"
       POSTGRES_USER: productdb_user
       POSTGRES_PASSWORD: productdb_password
       POSTGRES_DB: productdb
@@ -26,25 +22,26 @@ services:
       context: .
       dockerfile: Dockerfile
     image: docker.io/irid/productdb:latest
-    container_name: productdb-api
+    container_name: productdb
+    restart: always
     environment:
-      HTTP_PROXY: ""
-      HTTPS_PROXY: ""
-      http_proxy: ""
-      https_proxy: ""
-      NO_PROXY: "*"
       DATABASE_URL: postgresql://productdb_user:productdb_password@postgres:5432/productdb
       SECRET_KEY: your-secret-key-change-in-production
       ALGORITHM: HS256
       ACCESS_TOKEN_EXPIRE_MINUTES: 43200
-    ports:
-      - "8100:8000"
+    networks:
+      - default
+      - caddy-network
+    expose:
+      - "8000"
     depends_on:
       postgres:
         condition: service_healthy
     volumes:
-      - ./app:/app/app
       - ./uploads:/app/uploads
-      - ./web/dist:/app/web/dist
     command: >
-      sh -c "python -c 'from app.database import engine, Base; Base.metadata.create_all(bind=engine)' && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+      sh -c "uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+networks:
+  caddy-network:
+    external: true

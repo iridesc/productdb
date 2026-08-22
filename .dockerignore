@@ -1,0 +1,73 @@
+# === Git ===
+.git
+.gitignore
+.gitattributes
+
+# === Claude Code ===
+.claude
+.codegraph
+
+# === IDE / Editor ===
+.vscode
+.trae
+.idea
+*.swp
+*.swo
+*~
+
+# === Python ===
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.env
+.venv
+venv
+.zshenv
+
+# === Node / 前端源码（构建只需 dist + nginx.conf） ===
+web/node_modules
+web/src
+web/public
+web/index.html
+web/vite.config.*
+web/package.json
+web/package-lock.json
+web/tsconfig.*
+web/*.config.*
+web/.env*
+web/components.d.ts
+web/*.d.ts
+
+# === Docker / 编排文件 ===
+docker-compose.yml
+docker-compose-nas.yml
+Dockerfile
+Dockerfile.web
+.dockerignore
+
+# === 文档 ===
+README.md
+DESIGN.md
+SPEC.md
+测试报告.md
+
+# === 测试文件 ===
+test_order_no_v2.py
+tests/
+
+# === 数据 / 上传 ===
+data
+uploads
+
+# === OpenSpec ===
+openspec
+
+# === macOS ===
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# === 其他 ===
+run.sh
+*.md
