@@ -13,8 +13,8 @@ services:
       POSTGRES_DB: productdb
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
-    ports:
-      - "5433:5432"
+    expose:
+      - "5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U productdb_user -d productdb"]
       interval: 10s
@@ -38,7 +38,7 @@ services:
       ALGORITHM: HS256
       ACCESS_TOKEN_EXPIRE_MINUTES: 43200
     ports:
-      - "3001:8000"
+      - "8100:8000"
     depends_on:
       postgres:
         condition: service_healthy

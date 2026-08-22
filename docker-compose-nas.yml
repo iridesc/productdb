@@ -1,0 +1,47 @@
+services:
+  postgres:
+    image: docker.m.daocloud.io/library/postgres:15-alpine
+    container_name: productdb-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: productdb_user
+      POSTGRES_PASSWORD: ***REMOVED***
+      POSTGRES_DB: productdb
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U productdb_user -d productdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: docker.io/irid/productdb:latest
+    container_name: productdb
+    restart: always
+    environment:
+      DATABASE_URL: postgresql://productdb_user:***REMOVED***@postgres:5432/productdb
+      SECRET_KEY: ***REMOVED***
+      ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: 43200
+    networks:
+      - default
+      - caddy-network
+    expose:
+      - "8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./uploads:/app/uploads
+    command: >
+      sh -c "uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+networks:
+  caddy-network:
+    external: true
