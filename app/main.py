@@ -109,7 +109,20 @@ async def lifespan(app: FastAPI):
     init_roles()
     init_default_admin()
     migrate_customer_info()
-    yield
+    # MCP Server 健康检查：验证系统 Token 配置
+    try:
+        from mcp_server.client import get_client
+        await get_client().validate_token()
+        print("[MCP] ready — /mcp endpoint active, system token valid")
+    except Exception as exc:
+        print(f"[MCP] warning — /mcp mounted but not ready: {exc}")
+    # 挂载子应用（MCP）的 lifespan 不会自动执行，需手动运行 session manager
+    mgr = getattr(mcp_app, "_session_manager", None)
+    if mgr is not None:
+        async with mgr.run():
+            yield
+    else:
+        yield
     pass
 
 
@@ -149,13 +162,44 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 静态文件服务
-if os.path.exists(UPLOAD_DIR):
-    app.mount("/api/v1/uploads", StaticFiles(directory=os.path.join(UPLOAD_DIR, "images")), name="uploads")
+# 静态文件服务（上传图片）
+# 注意：必须确保目录存在后再挂载。若在 lifespan 中才创建目录，
+# 此处 import 时的 os.path.exists 检查会失败，导致图片请求被 SPA catch-all 接管。
+UPLOAD_IMAGES_DIR = os.path.join(UPLOAD_DIR, "images")
+os.makedirs(UPLOAD_IMAGES_DIR, exist_ok=True)
+app.mount("/api/v1/uploads", StaticFiles(directory=UPLOAD_IMAGES_DIR), name="uploads")
 
 # 注册路由
 for router in routers:
     app.include_router(router, prefix="/api/v1")
+
+
+@app.get("/health")
+def health_check():
+    return {"status": "healthy"}
+
+
+# MCP Server（Streamable HTTP 传输）— 必须挂在 SPA catch-all 之前
+# 其他 AI 助手可通过 https://<host>/mcp 挂载调用 20 个 MCP 工具
+from mcp_server.server import mcp as mcp_app
+
+class _MCPAsgi:
+    """把 scope.path 规范为子应用监听的 / 后转发（Starlette 的 Mount 只匹配带尾斜杠的 /mcp/xxx）。"""
+    def __init__(self, asgi_app):
+        self.asgi_app = asgi_app
+
+    async def __call__(self, scope, receive, send):
+        scope["path"] = "/"
+        scope["root_path"] = (scope.get("root_path") or "") + "/mcp"
+        await self.asgi_app(scope, receive, send)
+
+
+# 子应用默认监听 /mcp，但 mount 会去掉 /mcp 前缀；改为监听 / 后挂到 /mcp
+mcp_app.settings.streamable_http_path = "/"
+_mcp_asgi_app = mcp_app.streamable_http_app()
+app.mount("/mcp", _mcp_asgi_app, name="mcp")
+# Mount 的 regex 是 ^/mcp/xxx$，无尾斜杠的 /mcp 会落到 SPA catch-all 返回 405，补一条精确路由
+app.add_route("/mcp", _MCPAsgi(_mcp_asgi_app), methods=["POST", "GET", "DELETE"])
 
 
 # 前端静态文件（合并 web 容器到 api 容器）
@@ -186,11 +230,6 @@ else:
             "docs": "/docs",
             "redoc": "/redoc"
         }
-
-
-@app.get("/health")
-def health_check():
-    return {"status": "healthy"}
 
 
 if __name__ == "__main__":
