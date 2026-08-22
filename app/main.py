@@ -182,13 +182,39 @@ def health_check():
 # MCP Server（Streamable HTTP 传输）— 必须挂在 SPA catch-all 之前
 # 其他 AI 助手可通过 https://<host>/mcp 挂载调用 20 个 MCP 工具
 from mcp_server.server import mcp as mcp_app
+import secrets as _secrets
+from starlette.responses import JSONResponse as _JSONResponse
+
+_MCP_AUTH_TOKEN = os.environ.get("PRODUCTDB_MCP_AUTH_TOKEN")
+
 
 class _MCPAsgi:
-    """把 scope.path 规范为子应用监听的 / 后转发（Starlette 的 Mount 只匹配带尾斜杠的 /mcp/xxx）。"""
+    """把 scope.path 规范为子应用监听的 / 后转发；可选 Bearer Token 校验。
+
+    若设置了 PRODUCTDB_MCP_AUTH_TOKEN，外部访问 /mcp 必须携带
+    Authorization: Bearer <token>，否则返回 401。不设置则保持开放。
+    """
     def __init__(self, asgi_app):
         self.asgi_app = asgi_app
 
+    async def _reject(self, scope, receive, send):
+        response = _JSONResponse({"detail": "Invalid or missing bearer token"}, status_code=401)
+        await response(scope, receive, send)
+
     async def __call__(self, scope, receive, send):
+        # Bearer 校验（可选）
+        if _MCP_AUTH_TOKEN:
+            authorized = False
+            for name, value in scope.get("headers", []):
+                if name.lower() == b"authorization":
+                    parts = value.split(b" ")
+                    if len(parts) == 2 and parts[0].lower() == b"bearer":
+                        if _secrets.compare_digest(parts[1].decode("utf-8", "ignore"), _MCP_AUTH_TOKEN):
+                            authorized = True
+                    break
+            if not authorized:
+                await self._reject(scope, receive, send)
+                return
         scope["path"] = "/"
         scope["root_path"] = (scope.get("root_path") or "") + "/mcp"
         await self.asgi_app(scope, receive, send)
