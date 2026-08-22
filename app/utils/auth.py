@@ -1,4 +1,6 @@
 from datetime import datetime, timedelta
+import hashlib
+import hmac
 from typing import Optional
 from jose import JWTError, jwt
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -7,7 +9,7 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session, selectinload
 from app.config import settings
 from app.database import get_db
-from app.models import User, UserRole
+from app.models import User, UserRole, SystemToken
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/v1/auth/login")
 
@@ -45,15 +47,58 @@ def get_current_user(
         username: str = payload.get("sub")
         if username is None:
             raise credentials_exception
+        user = (
+            db.query(User)
+            .options(selectinload(User.roles).selectinload(UserRole.role))
+            .filter(User.username == username)
+            .first()
+        )
+    except JWTError:
+        # System tokens are opaque credentials. Only their SHA-256 digest is stored.
+        supplied_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        token_record = db.query(SystemToken).filter(SystemToken.token_hash == supplied_hash).first()
+        now = datetime.utcnow()
+        if (
+            token_record is None
+            or not hmac.compare_digest(token_record.token_hash, supplied_hash)
+            or not token_record.is_active
+            or (token_record.expires_at is not None and token_record.expires_at <= now)
+        ):
+            raise credentials_exception
+        user = (
+            db.query(User)
+            .options(selectinload(User.roles).selectinload(UserRole.role))
+            .filter(User.id == token_record.created_by)
+            .first()
+        )
+        if user is None:
+            raise credentials_exception
+        token_record.last_used_at = now
+        db.commit()
+    if user is None:
+        raise credentials_exception
+    return user
+
+
+def get_current_session_user(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+) -> User:
+    """Authenticate a human login JWT only; system tokens are deliberately rejected."""
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            raise credentials_exception
     except JWTError:
         raise credentials_exception
-    user = (
-        db.query(User)
-        .options(selectinload(User.roles).selectinload(UserRole.role))
-        .filter(User.username == username)
-        .first()
-    )
-    if user is None:
+    user = db.query(User).filter(User.username == username).first()
+    if user is None or not user.is_active:
         raise credentials_exception
     return user
 
