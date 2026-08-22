@@ -134,10 +134,10 @@ onMounted(loadTokens)
 </template>
 
 <style scoped>
-.page { min-height: 100vh; background: #f7f8fa; padding-bottom: 88px; }
+.page { min-height: 100vh; background: #f7f8fa; padding-bottom: calc(150px + env(safe-area-inset-bottom)); }
 .token-list { margin-top: 12px; }
 .actions { display: flex; gap: 6px; align-items: center; margin-left: 10px; }
-.footer { position: fixed; left: 16px; right: 16px; bottom: 20px; }
+.footer { position: fixed; left: 16px; right: 16px; bottom: calc(50px + env(safe-area-inset-bottom) + 16px); }
 .editor { padding: 18px 16px 28px; }
 .editor h3 { text-align: center; margin: 0 0 16px; }
 .editor .van-button { margin-top: 18px; }

@@ -63,6 +63,7 @@ def get_sales_orders(
     status: Optional[SalesOrderStatusEnum] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
+    keyword: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -86,6 +87,12 @@ def get_sales_orders(
         query = query.filter(SalesOrder.order_date >= start_date)
     if end_date:
         query = query.filter(SalesOrder.order_date <= end_date)
+    if keyword:
+        query = query.filter(
+            SalesOrder.order_no.contains(keyword)
+            | SalesOrder.customer_info.contains(keyword)
+            | SalesOrder.express_no.contains(keyword)
+        )
 
     total = query.count()
     items = (
@@ -102,7 +109,7 @@ def get_sales_orders(
 def create_sales_order(
     order_data: SalesOrderCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_permissions("can_create_sales")),
 ):
     """创建销售订单（草稿状态）"""
     # 校验每种产品数量不超过1000
