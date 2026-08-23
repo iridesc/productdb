@@ -18,6 +18,7 @@ import os
 import sys
 import asyncio
 from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.server import Context
 
 try:
     # 作为包被集成进 app（容器内）时
@@ -27,6 +28,21 @@ except ImportError:
     from client import get_client
 
 mcp = FastMCP("ProductDB")
+
+
+def _client_for(ctx: Context):
+    """从 MCP 请求中提取客户端携带的系统 Token，透传给 ProductDB API 调用。"""
+    token = None
+    try:
+        req = ctx.request_context.request
+        if req is not None:
+            auth = req.headers.get("authorization", "")
+            if auth.lower().startswith("bearer "):
+                token = auth[7:].strip()
+    except Exception:
+        pass
+    return get_client(token)
+
 
 
 # ====================================================================
@@ -100,16 +116,16 @@ def _flatten(obj, indent=0) -> str:
     name="query_materials",
     description="搜索/查询物料列表，支持按名称、编码、类别筛选和分页",
 )
-async def query_materials(
+async def query_materials(ctx: Context,
+    
     keyword: str | None = None,
     category: str | None = None,
     is_active: bool | None = None,
     page: int = 1,
     page_size: int = 20,
     sort_by: str | None = None,
-    sort_order: str = "asc",
-) -> str:
-    cli = get_client()
+    sort_order: str = "asc") -> str:
+    cli = _client_for(ctx)
     data = await cli.query_materials(
         keyword=keyword,
         category=category,
@@ -130,8 +146,9 @@ async def query_materials(
     name="query_material_categories",
     description="查询物料分类；不传 parent_id 时返回顶级分类，传入后返回其子分类",
 )
-async def query_material_categories(parent_id: str | None = None) -> str:
-    data = await get_client().query_material_categories(parent_id=parent_id)
+async def query_material_categories(ctx: Context,
+    parent_id: str | None = None) -> str:
+    data = await _client_for(ctx).query_material_categories(parent_id=parent_id)
     return _table(data, ["id", "code", "name", "parent_id", "created_at"])
 
 
@@ -139,8 +156,9 @@ async def query_material_categories(parent_id: str | None = None) -> str:
     name="get_material",
     description="获取单个物料的完整信息（含关联数据）",
 )
-async def get_material(id_or_code: str) -> str:
-    cli = get_client()
+async def get_material(ctx: Context,
+    id_or_code: str) -> str:
+    cli = _client_for(ctx)
     data = await cli.get_material(id_or_code)
     return _flatten(data)
 
@@ -149,8 +167,9 @@ async def get_material(id_or_code: str) -> str:
     name="get_material_images",
     description="查询指定物料的图片元数据和访问地址",
 )
-async def get_material_images(material_id: str) -> str:
-    data = await get_client().get_material_images(material_id)
+async def get_material_images(ctx: Context,
+    material_id: str) -> str:
+    data = await _client_for(ctx).get_material_images(material_id)
     return _table(data, ["id", "image_url", "sort_order", "created_at"])
 
 
@@ -158,8 +177,9 @@ async def get_material_images(material_id: str) -> str:
     name="get_bom",
     description="查询产品的物料清单（BOM），返回所有子物料",
 )
-async def get_bom(product_id: str) -> str:
-    cli = get_client()
+async def get_bom(ctx: Context,
+    product_id: str) -> str:
+    cli = _client_for(ctx)
     data = await cli.get_bom(product_id)
     items = data if isinstance(data, list) else data.get("items", [])
     return _table(
@@ -172,8 +192,9 @@ async def get_bom(product_id: str) -> str:
     name="query_boms",
     description="查询 BOM 行项目，可按产品 ID 或组件物料 ID 筛选",
 )
-async def query_boms(product_id: str | None = None, material_id: str | None = None) -> str:
-    data = await get_client().query_boms(product_id=product_id, material_id=material_id)
+async def query_boms(ctx: Context,
+    product_id: str | None = None, material_id: str | None = None) -> str:
+    data = await _client_for(ctx).query_boms(product_id=product_id, material_id=material_id)
     return _table(data, ["id", "product_id", "material_id", "quantity", "scrap_rate", "is_optional", "note"])
 
 
@@ -181,22 +202,23 @@ async def query_boms(product_id: str | None = None, material_id: str | None = No
     name="get_bom_tree",
     description="递归查询产品的完整多层 BOM 树",
 )
-async def get_bom_tree(product_id: str) -> str:
-    return _flatten(await get_client().get_bom_tree(product_id))
+async def get_bom_tree(ctx: Context,
+    product_id: str) -> str:
+    return _flatten(await _client_for(ctx).get_bom_tree(product_id))
 
 
 @mcp.tool(
     name="query_inventory",
     description="查询当前库存汇总，支持类别、关键字、低库存和分页筛选",
 )
-async def query_inventory(
+async def query_inventory(ctx: Context,
+    
     category: str | None = None,
     keyword: str | None = None,
     low_stock: bool = False,
     page: int = 1,
-    page_size: int = 20,
-) -> str:
-    data = await get_client().get_inventory(
+    page_size: int = 20) -> str:
+    data = await _client_for(ctx).get_inventory(
         category=category, keyword=keyword, low_stock=low_stock,
         page=page, page_size=page_size,
     )
@@ -208,13 +230,13 @@ async def query_inventory(
     name="check_inventory",
     description="查询库存流水记录，可按物料或交易类型筛选",
 )
-async def check_inventory(
+async def check_inventory(ctx: Context,
+    
     material_id: str | None = None,
     transaction_type: str | None = None,
     page: int = 1,
-    page_size: int = 20,
-) -> str:
-    cli = get_client()
+    page_size: int = 20) -> str:
+    cli = _client_for(ctx)
     data = await cli.query_inventory(
         material_id=material_id,
         transaction_type=transaction_type,
@@ -232,23 +254,24 @@ async def check_inventory(
     name="get_material_inventory_history",
     description="获取指定物料当前库存及最近 50 条库存变动历史",
 )
-async def get_material_inventory_history(material_id: str) -> str:
-    return _flatten(await get_client().get_material_inventory_history(material_id))
+async def get_material_inventory_history(ctx: Context,
+    material_id: str) -> str:
+    return _flatten(await _client_for(ctx).get_material_inventory_history(material_id))
 
 
 @mcp.tool(
     name="query_sales_orders",
     description="查询销售订单列表，支持按状态、日期、关键字筛选",
 )
-async def query_sales_orders(
+async def query_sales_orders(ctx: Context,
+    
     status: str | None = None,
     keyword: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
     page: int = 1,
-    page_size: int = 20,
-) -> str:
-    cli = get_client()
+    page_size: int = 20) -> str:
+    cli = _client_for(ctx)
     data = await cli.query_sales_orders(
         status=status, keyword=keyword,
         start_date=start_date, end_date=end_date,
@@ -265,8 +288,9 @@ async def query_sales_orders(
     name="get_sales_order",
     description="按订单 ID 或订单号获取单个销售订单的详细信息（含明细行）",
 )
-async def get_sales_order(order_id: str) -> str:
-    cli = get_client()
+async def get_sales_order(ctx: Context,
+    order_id: str) -> str:
+    cli = _client_for(ctx)
     data = await cli.get_sales_order(order_id)
     return _flatten(data)
 
@@ -275,8 +299,9 @@ async def get_sales_order(order_id: str) -> str:
     name="get_sales_order_images",
     description="按订单 ID 或订单号查询销售订单的发货和物流凭证图片",
 )
-async def get_sales_order_images(order_id: str) -> str:
-    data = await get_client().get_sales_order_images(order_id)
+async def get_sales_order_images(ctx: Context,
+    order_id: str) -> str:
+    data = await _client_for(ctx).get_sales_order_images(order_id)
     return _table(data, ["id", "image_type", "image_url", "sort_order", "created_at"])
 
 
@@ -284,10 +309,11 @@ async def get_sales_order_images(order_id: str) -> str:
     name="publish_sales_order",
     description="按订单 ID 或订单号发布草稿销售订单并扣减产品库存。此操作会修改订单和库存，必须显式确认",
 )
-async def publish_sales_order(order_id: str, confirm: bool = False) -> str:
+async def publish_sales_order(ctx: Context,
+    order_id: str, confirm: bool = False) -> str:
     if not confirm:
         raise ValueError("发布会扣减库存；确认后请设置 confirm=true")
-    data = await get_client().publish_sales_order(order_id)
+    data = await _client_for(ctx).publish_sales_order(order_id)
     return _flatten(data)
 
 
@@ -295,16 +321,16 @@ async def publish_sales_order(order_id: str, confirm: bool = False) -> str:
     name="query_production_orders",
     description="查询生产订单列表，支持按状态、关键字筛选",
 )
-async def query_production_orders(
+async def query_production_orders(ctx: Context,
+    
     status: str | None = None,
     keyword: str | None = None,
     product_id: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
     page: int = 1,
-    page_size: int = 20,
-) -> str:
-    cli = get_client()
+    page_size: int = 20) -> str:
+    cli = _client_for(ctx)
     data = await cli.query_production_orders(
         status=status, keyword=keyword, product_id=product_id,
         start_date=start_date, end_date=end_date,
@@ -321,8 +347,9 @@ async def query_production_orders(
     name="get_production_order",
     description="按订单 ID 或订单号获取单个生产订单的详细信息（含物料需求明细）",
 )
-async def get_production_order(order_id: str) -> str:
-    cli = get_client()
+async def get_production_order(ctx: Context,
+    order_id: str) -> str:
+    cli = _client_for(ctx)
     data = await cli.get_production_order(order_id)
     return _flatten(data)
 
@@ -331,8 +358,9 @@ async def get_production_order(order_id: str) -> str:
     name="get_production_order_images",
     description="按订单 ID 或订单号查询生产订单的产品图片",
 )
-async def get_production_order_images(order_id: str) -> str:
-    data = await get_client().get_production_order_images(order_id)
+async def get_production_order_images(ctx: Context,
+    order_id: str) -> str:
+    data = await _client_for(ctx).get_production_order_images(order_id)
     return _table(data, ["id", "image_type", "image_url", "sort_order", "created_at"])
 
 
@@ -340,18 +368,20 @@ async def get_production_order_images(order_id: str) -> str:
     name="get_production_materials",
     description="按订单 ID 或订单号查询生产订单的物料需求、已消耗数量和库存充足情况",
 )
-async def get_production_materials(order_id: str) -> str:
-    return _flatten(await get_client().get_production_materials(order_id))
+async def get_production_materials(ctx: Context,
+    order_id: str) -> str:
+    return _flatten(await _client_for(ctx).get_production_materials(order_id))
 
 
 @mcp.tool(
     name="publish_production_order",
     description="按订单 ID 或订单号发布草稿生产订单并按 BOM 扣减原料库存。此操作会修改订单和库存，必须显式确认",
 )
-async def publish_production_order(order_id: str, confirm: bool = False) -> str:
+async def publish_production_order(ctx: Context,
+    order_id: str, confirm: bool = False) -> str:
     if not confirm:
         raise ValueError("发布会按 BOM 扣减原料库存；确认后请设置 confirm=true")
-    data = await get_client().publish_production_order(order_id)
+    data = await _client_for(ctx).publish_production_order(order_id)
     return _flatten(data)
 
 
@@ -359,8 +389,8 @@ async def publish_production_order(order_id: str, confirm: bool = False) -> str:
     name="get_dashboard_stats",
     description="获取系统概览统计数据（物料数、销售订单数、生产订单数）",
 )
-async def get_dashboard_stats() -> str:
-    cli = get_client()
+async def get_dashboard_stats(ctx: Context) -> str:
+    cli = _client_for(ctx)
     stats = await cli.get_dashboard()
     return "\n".join(f"{k}: {v}" for k, v in stats.items())
 
@@ -375,7 +405,7 @@ if __name__ == "__main__":
 
     async def _auth_check() -> None:
         try:
-            await get_client().validate_token()
+            await _client_for(ctx).validate_token()
             print("[MCP] Authentication OK", file=sys.stderr)
         except Exception as exc:
             print(f"[MCP] Authentication failed: {exc}", file=sys.stderr)
