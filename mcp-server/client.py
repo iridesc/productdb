@@ -13,14 +13,15 @@ class ProductDBAPIError(RuntimeError):
 
 
 class ProductDBClient:
-    """Async HTTP client that forwards the configured system token to ProductDB."""
+    """Async HTTP client that forwards a system token to ProductDB."""
 
-    def __init__(self):
-        if not API_TOKEN:
-            raise RuntimeError("PRODUCTDB_SYSTEM_TOKEN is required")
+    def __init__(self, token: str | None = None):
+        self._token = token or API_TOKEN
+        if not self._token:
+            raise RuntimeError("PRODUCTDB_SYSTEM_TOKEN is required (or pass a token)")
         self._http = httpx.AsyncClient(
             base_url=API_BASE,
-            headers={"Authorization": f"Bearer {API_TOKEN}"},
+            headers={"Authorization": f"Bearer {self._token}"},
             timeout=30.0,
         )
 
@@ -167,10 +168,14 @@ class ProductDBClient:
 
 # Module-level singleton
 _client: ProductDBClient | None = None
+_current_token: str | None = None
 
 
-def get_client() -> ProductDBClient:
-    global _client
-    if _client is None:
-        _client = ProductDBClient()
+def get_client(token: str | None = None) -> ProductDBClient:
+    """Return a cached client. Pass a token to switch credentials (e.g. per-request MCP token)."""
+    global _client, _current_token
+    effective = token or API_TOKEN
+    if _client is None or effective != _current_token:
+        _client = ProductDBClient(token=effective)
+        _current_token = effective
     return _client
