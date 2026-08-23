@@ -50,6 +50,11 @@ class ProductDBClient:
         self._ensure_success(response)
         return response.json()
 
+    async def _post(self, path: str, payload: dict):
+        response = await self._http.post(path, json=payload)
+        self._ensure_success(response)
+        return response.json()
+
     # ---- materials ----
 
     async def query_materials(self, **params):
@@ -89,6 +94,9 @@ class ProductDBClient:
     async def query_sales_orders(self, **params):
         return await self._get("/sales-orders", **params)
 
+    async def create_sales_order(self, payload: dict):
+        return await self._post("/sales-orders", payload)
+
     async def _resolve_sales_order_id(self, id_or_no: str) -> str:
         try:
             UUID(id_or_no)
@@ -113,6 +121,9 @@ class ProductDBClient:
 
     async def query_production_orders(self, **params):
         return await self._get("/production-orders", **params)
+
+    async def create_production_order(self, payload: dict):
+        return await self._post("/production-orders", payload)
 
     async def _resolve_production_order_id(self, id_or_no: str) -> str:
         try:

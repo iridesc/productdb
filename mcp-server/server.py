@@ -318,6 +318,35 @@ async def publish_sales_order(ctx: Context,
 
 
 @mcp.tool(
+    name="create_sales_order",
+    description="创建销售订单（草稿状态）。order_date 必填（YYYY-MM-DD）；items 为明细行列表，每项需 product_id（产品UUID）、quantity（数量）、unit_price（单价）。此操作会写入数据，必须显式确认",
+)
+async def create_sales_order(ctx: Context,
+    order_date: str,
+    customer_info: str | None = None,
+    express_no: str | None = None,
+    delivery_date: str | None = None,
+    remark: str | None = None,
+    items: list[dict] | None = None,
+    confirm: bool = False) -> str:
+    if not confirm:
+        raise ValueError("创建订单会写入数据；确认后请设置 confirm=true")
+    payload = {"order_date": order_date}
+    if customer_info:
+        payload["customer_info"] = customer_info
+    if express_no:
+        payload["express_no"] = express_no
+    if delivery_date:
+        payload["delivery_date"] = delivery_date
+    if remark:
+        payload["remark"] = remark
+    if items:
+        payload["items"] = items
+    data = await _client_for(ctx).create_sales_order(payload)
+    return _flatten(data)
+
+
+@mcp.tool(
     name="query_production_orders",
     description="查询生产订单列表，支持按状态、关键字筛选",
 )
@@ -382,6 +411,33 @@ async def publish_production_order(ctx: Context,
     if not confirm:
         raise ValueError("发布会按 BOM 扣减原料库存；确认后请设置 confirm=true")
     data = await _client_for(ctx).publish_production_order(order_id)
+    return _flatten(data)
+
+
+@mcp.tool(
+    name="create_production_order",
+    description="创建生产订单（草稿状态）。product_id（产品UUID）和 quantity（数量，不超过1000）必填；可选 sales_order_id 关联销售订单、start_date/end_date（YYYY-MM-DD）、remark。此操作会写入数据，必须显式确认",
+)
+async def create_production_order(ctx: Context,
+    product_id: str,
+    quantity: float,
+    sales_order_id: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    remark: str | None = None,
+    confirm: bool = False) -> str:
+    if not confirm:
+        raise ValueError("创建订单会写入数据；确认后请设置 confirm=true")
+    payload = {"product_id": product_id, "quantity": quantity}
+    if sales_order_id:
+        payload["sales_order_id"] = sales_order_id
+    if start_date:
+        payload["start_date"] = start_date
+    if end_date:
+        payload["end_date"] = end_date
+    if remark:
+        payload["remark"] = remark
+    data = await _client_for(ctx).create_production_order(payload)
     return _flatten(data)
 
 
