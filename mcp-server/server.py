@@ -307,12 +307,12 @@ async def get_sales_order_images(ctx: Context,
 
 @mcp.tool(
     name="publish_sales_order",
-    description="按订单 ID 或订单号发布草稿销售订单并扣减产品库存。此操作会修改订单和库存，必须显式确认",
+    description="按订单 ID 或订单号发布草稿销售订单。发布只确认需求，不扣减库存，必须显式确认",
 )
 async def publish_sales_order(ctx: Context,
     order_id: str, confirm: bool = False) -> str:
     if not confirm:
-        raise ValueError("发布会扣减库存；确认后请设置 confirm=true")
+        raise ValueError("发布会将订单转为待处理状态；确认后请设置 confirm=true")
     data = await _client_for(ctx).publish_sales_order(order_id)
     return _flatten(data)
 

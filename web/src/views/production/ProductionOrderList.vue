@@ -8,6 +8,7 @@ import { handleError } from '@/utils/request'
 import { previewImage } from '@/utils/image'
 import { formatNumber } from '@/utils/number'
 import { useUserStore } from '@/store/user'
+import HorizontalTable from '@/components/HorizontalTable.vue'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -76,7 +77,7 @@ onMounted(() => {
 
     <div class="table-container">
       <van-pull-refresh v-model="loading" @refresh="fetchList">
-        <div class="table-wrapper">
+        <HorizontalTable min-width="900px">
           <table class="order-table">
             <thead>
               <tr>
@@ -118,7 +119,7 @@ onMounted(() => {
           </table>
 
           <van-empty v-if="!loading && list.length === 0" description="暂无订单" />
-        </div>
+        </HorizontalTable>
       </van-pull-refresh>
       <van-pagination
         v-if="pagination.total > pagination.page_size"
@@ -144,12 +145,6 @@ onMounted(() => {
 
 .table-container {
   padding: 0 16px 16px;
-}
-
-.table-wrapper {
-  background: #fff;
-  border-radius: 8px;
-  overflow-x: auto;
 }
 
 .order-table {

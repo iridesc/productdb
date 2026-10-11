@@ -275,7 +275,7 @@ const tempTotalAmount = computed(() => {
 
 
 async function handlePublish() {
-  await showConfirmDialog({ title: '确认发布', message: '发布后将锁定库存并进入待处理状态' })
+  await showConfirmDialog({ title: '确认发布', message: '发布后将进入待处理状态，检出时再扣减库存' })
   actionLoading.value = 'publish'
   try {
     await publishSalesOrder(id)
@@ -293,7 +293,7 @@ async function handleConfirmItem(itemId: string) {
   actionLoading.value = itemId
   try {
     await confirmSalesOrderItem(id, itemId)
-    showMessage('已检查')
+    showMessage('已检出')
     fetchDetail()
   } catch (e) {
     const errorMessage = handleError(e)
@@ -317,12 +317,12 @@ async function handleCancel() {
     return // 用户点击「取消操作」，关闭弹窗
   }
 
-  // 第二步：选择是否退回库存
+  // 第二步：选择是否退回已检出库存
   let returnInventory = true
   try {
     await showConfirmDialog({
       title: '取消销售订单',
-      message: '已锁定物料库存是否退回？',
+      message: '是否退回已检出的物料库存？',
       confirmButtonText: '退回库存并取消',
       cancelButtonText: '不退回直接取消',
     })
@@ -397,7 +397,7 @@ onMounted(() => {
       <div v-if="detail.status === 'pending'" class="workflow-steps">
         <div class="wf-step" :class="{ done: step1Done, active: !step1Done }">
           <div class="wf-step-num">1</div>
-          <div class="wf-step-label">{{ step1Done ? '物料已检查' : '检查物料' }}</div>
+          <div class="wf-step-label">{{ step1Done ? '物料已检出' : '检出物料' }}</div>
         </div>
         <div class="wf-line" :class="{ done: step1Done }"></div>
         <div class="wf-step" :class="{ done: step2Done, active: step1Done && !step2Done, locked: !step1Done }">
@@ -450,7 +450,7 @@ onMounted(() => {
           <div class="card-title">
             <span v-if="detail.status === 'pending' && !step1Done" class="pulse-dot"></span>
             物料列表
-            <span v-if="detail.status === 'pending' && step1Done" class="step-done-tag">已全部检查</span>
+            <span v-if="detail.status === 'pending' && step1Done" class="step-done-tag">已全部检出</span>
           </div>
           <van-button
             v-if="detail.status === 'draft' && isEditing"
@@ -540,9 +540,9 @@ onMounted(() => {
                       @click="handleConfirmItem(item.id)"
                     >
                       <span class="pulse-dot"></span>
-                      待检查
+                      检出
                     </van-button>
-                    <span v-else-if="item.is_confirmed" class="check-done-tag">已检查</span>
+                    <span v-else-if="item.is_confirmed" class="check-done-tag">已检出</span>
                   </div>
                 </div>
               </div>
@@ -696,7 +696,7 @@ onMounted(() => {
                 round
                 disabled
               >
-                {{ !step1Done ? '步骤① 请先检查所有物料' : !step2Done ? '步骤② 请上传物料凭证图片' : '步骤③ 请上传物流图片' }}
+                {{ !step1Done ? '步骤① 请先检出所有物料' : !step2Done ? '步骤② 请上传物料凭证图片' : '步骤③ 请上传物流图片' }}
               </van-button>
               <!-- 仅管理员可取消 -->
               <van-button

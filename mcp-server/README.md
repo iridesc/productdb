@@ -57,7 +57,7 @@ MCP Server 启动时会向 ProductDB 校验凭证。缺少 Token，或 Token 无
 | `query_sales_orders` | 查询销售订单 | status, keyword, start_date, end_date, page |
 | `get_sales_order` | 获取销售订单详情 | order_id |
 | `get_sales_order_images` | 查询销售订单凭证图片 | order_id |
-| `publish_sales_order` | 发布销售订单并扣减库存 | order_id, confirm |
+| `publish_sales_order` | 发布销售订单（不扣库存） | order_id, confirm |
 | `query_production_orders` | 查询生产订单 | status, keyword, page |
 | `get_production_order` | 获取生产订单详情 | order_id |
 | `get_production_order_images` | 查询生产订单图片 | order_id |

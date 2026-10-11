@@ -299,8 +299,14 @@ def publish_sales_order(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """发布销售订单（草稿 -> 待处理），检查库存并一次性扣减"""
-    order = db.query(SalesOrder).options(selectinload(SalesOrder.items)).filter(SalesOrder.id == order_id).first()
+    """发布销售订单（草稿 -> 待处理），仅确认需求，不扣减库存"""
+    order = (
+        db.query(SalesOrder)
+        .options(selectinload(SalesOrder.items))
+        .filter(SalesOrder.id == order_id)
+        .with_for_update()
+        .first()
+    )
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="订单不存在")
 
@@ -323,38 +329,20 @@ def publish_sales_order(
             detail={"error": "订单信息不完整", "fields": errors},
         )
 
-    # 检查所有物料库存
-    for item in order.items:
-        product = db.query(Material).filter(Material.id == item.product_id).first()
-        if not product:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"产品不存在 (ID: {item.product_id})",
-            )
-        if product.current_stock < item.quantity:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"库存不足：{product.name} 当前库存 {product.current_stock}，需要 {item.quantity}",
-            )
+    # 发布只确认销售需求；实际库存等到逐项“检出”时才校验并扣减。
+    product_ids = {item.product_id for item in order.items}
+    existing_product_ids = {
+        row[0]
+        for row in db.query(Material.id).filter(Material.id.in_(product_ids)).all()
+    }
 
-    # 一次性扣减所有物料库存
-    for item in order.items:
-        product = db.query(Material).filter(Material.id == item.product_id).first()
-        before_stock = product.current_stock
-        product.current_stock -= item.quantity
-
-        transaction = InventoryTransaction(
-            material_id=product.id,
-            transaction_type=InventoryTransactionTypeEnum.SALES_OUT,
-            quantity=item.quantity,
-            before_quantity=before_stock,
-            after_quantity=product.current_stock,
-            reference_type="sales_order",
-            reference_id=order_id,
-            operator=current_user.username,
-            remark=f"销售订单 {order.order_no} 锁定库存",
+    missing_product_ids = product_ids - existing_product_ids
+    if missing_product_ids:
+        missing_product_id = next(iter(missing_product_ids))
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"产品不存在 (ID: {missing_product_id})",
         )
-        db.add(transaction)
 
     order.status = SalesOrderStatusEnum.PENDING
     db.commit()
@@ -369,28 +357,72 @@ def confirm_sales_order_item(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """确认分配物料（标记操作，库存已在发布时锁定）"""
-    order = db.query(SalesOrder).filter(SalesOrder.id == order_id).first()
+    """检出销售订单明细：校验并扣减库存，然后标记为已检出"""
+    order = (
+        db.query(SalesOrder)
+        .filter(SalesOrder.id == order_id)
+        .with_for_update()
+        .first()
+    )
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="订单不存在")
 
     if order.status != SalesOrderStatusEnum.PENDING:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="只有待处理状态的订单可以分配物料"
+            status_code=status.HTTP_400_BAD_REQUEST, detail="只有待处理状态的订单可以检出"
         )
 
-    item = db.query(SalesOrderItem).filter(
-        SalesOrderItem.id == item_id,
-        SalesOrderItem.order_id == order_id,
-    ).first()
+    item = (
+        db.query(SalesOrderItem)
+        .filter(
+            SalesOrderItem.id == item_id,
+            SalesOrderItem.order_id == order_id,
+        )
+        .with_for_update()
+        .first()
+    )
     if not item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="订单明细不存在")
 
     if item.is_confirmed:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="该物料已分配"
+            status_code=status.HTTP_400_BAD_REQUEST, detail="该物料已检出"
         )
 
+    product = (
+        db.query(Material)
+        .filter(Material.id == item.product_id)
+        .with_for_update()
+        .first()
+    )
+    if not product:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="产品不存在")
+
+    if product.current_stock < item.quantity:
+        shortage = item.quantity - product.current_stock
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"库存不足：{product.name} 当前库存 {product.current_stock}，"
+                f"需要 {item.quantity}，缺少 {shortage}"
+            ),
+        )
+
+    before_stock = product.current_stock
+    product.current_stock -= item.quantity
+    db.add(
+        InventoryTransaction(
+            material_id=product.id,
+            transaction_type=InventoryTransactionTypeEnum.SALES_OUT,
+            quantity=item.quantity,
+            before_quantity=before_stock,
+            after_quantity=product.current_stock,
+            reference_type="sales_order",
+            reference_id=order_id,
+            operator=current_user.username,
+            remark=f"销售订单 {order.order_no} 明细检出，扣减成品库存",
+        )
+    )
     item.is_confirmed = True
     db.commit()
     db.refresh(order)
@@ -525,6 +557,7 @@ def complete_sales_order(
             selectinload(SalesOrder.images),
         )
         .filter(SalesOrder.id == order_id)
+        .with_for_update()
         .first()
     )
     if not order:
@@ -539,7 +572,7 @@ def complete_sales_order(
     if unconfirmed_items:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"还有 {len(unconfirmed_items)} 个物料未分配，请先分配所有物料",
+            detail=f"还有 {len(unconfirmed_items)} 个物料未检出，请先检出所有物料",
         )
 
     product_images = [
@@ -570,12 +603,17 @@ def complete_sales_order(
 @router.put("/{order_id}/cancel", response_model=SalesOrderResponse)
 def cancel_sales_order(
     order_id: UUID,
-    return_inventory: bool = Query(True, description="是否退回已锁定物料库存"),
+    return_inventory: bool = Query(True, description="是否退回已检出物料库存"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("is_superuser")),
 ):
     """取消销售订单（仅管理员，可选是否退回库存）"""
-    order = db.query(SalesOrder).filter(SalesOrder.id == order_id).first()
+    order = (
+        db.query(SalesOrder)
+        .filter(SalesOrder.id == order_id)
+        .with_for_update()
+        .first()
+    )
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="订单不存在")
 
@@ -585,8 +623,10 @@ def cancel_sales_order(
         )
 
     if order.status == SalesOrderStatusEnum.PENDING and return_inventory:
-        # 退回已扣减的物料库存
+        # 只有已检出的明细扣减过库存，因此只退回这些明细。
         for item in order.items:
+            if not item.is_confirmed:
+                continue
             product = db.query(Material).filter(Material.id == item.product_id).first()
             if product:
                 before_stock = product.current_stock
@@ -600,7 +640,7 @@ def cancel_sales_order(
                     reference_type="sales_order_cancel",
                     reference_id=order_id,
                     operator=current_user.username,
-                    remark=f"取消销售订单 {order.order_no}，退回物料",
+                    remark=f"取消销售订单 {order.order_no}，退回已检出物料",
                 )
                 db.add(transaction)
 

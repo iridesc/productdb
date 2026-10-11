@@ -5,6 +5,7 @@ import { showMessage } from '@/utils/request'
 import request from '@/utils/request'
 import { handleError } from '@/utils/request'
 import { formatNumber } from '@/utils/number'
+import HorizontalTable from '@/components/HorizontalTable.vue'
 
 const router = useRouter()
 const loading = ref(false)
@@ -70,34 +71,26 @@ onMounted(() => {
       </van-checkbox>
     </div>
 
-    <!-- 列表 -->
+    <!-- 库存表格 -->
     <div class="list-container">
       <van-pull-refresh v-model="loading" @refresh="fetchList">
-        <div 
-          v-for="item in list" 
-          :key="item.material_id" 
-          class="list-item"
-          @click="goDetail(item.material_id)"
-        >
-          <div class="item-info">
-            <div class="item-name">{{ item.material_name }}</div>
-            <div class="item-meta">
-              <span class="item-code">{{ item.material_code }}</span>
-              <span class="item-category">{{ categoryMap[item.category] }}</span>
-            </div>
-          </div>
-          <div class="item-stock">
-            <div class="stock-num" :class="{ 'low-stock': item.current_stock < item.safety_stock }">
-              {{ formatNumber(item.current_stock) }} {{ item.unit }}
-            </div>
-            <div class="stock-label">库存</div>
-            <div v-if="item.current_stock < item.safety_stock" class="low-stock-tag">
-              低于安全库存 {{ formatNumber(item.safety_stock) }}
-            </div>
-          </div>
-        </div>
-
-        <van-empty v-if="!loading && list.length === 0" description="暂无库存" />
+        <HorizontalTable min-width="680px">
+          <table class="inventory-table">
+            <thead><tr><th>编码</th><th>名称</th><th>分类</th><th>当前库存</th><th>安全库存</th><th>单位</th><th>状态</th></tr></thead>
+            <tbody>
+              <tr v-for="item in list" :key="item.material_id" @click="goDetail(item.material_id)">
+                <td class="code-cell">{{ item.material_code }}</td>
+                <td class="name-cell">{{ item.material_name }}</td>
+                <td><span class="category-tag">{{ categoryMap[item.category] }}</span></td>
+                <td :class="{ 'low-stock': item.current_stock < item.safety_stock }">{{ formatNumber(item.current_stock) }}</td>
+                <td>{{ formatNumber(item.safety_stock) }}</td>
+                <td>{{ item.unit }}</td>
+                <td><span v-if="item.current_stock < item.safety_stock" class="low-stock-tag">库存不足</span><span v-else class="normal-stock-tag">正常</span></td>
+              </tr>
+            </tbody>
+          </table>
+          <van-empty v-if="!loading && list.length === 0" description="暂无库存" />
+        </HorizontalTable>
       </van-pull-refresh>
     </div>
   </div>
@@ -122,84 +115,26 @@ onMounted(() => {
   padding: 16px;
 }
 
-.list-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: #fff;
-  border-radius: 8px;
-  padding: 16px;
-  margin-bottom: 12px;
-  cursor: pointer;
-  border: 1px solid #eee;
-  transition: background-color 0.2s, border-color 0.2s;
-}
+.inventory-table { width: 100%; border-collapse: collapse; font-size: 13px; white-space: nowrap; }
+.inventory-table thead { background: #fafafa; }
+.inventory-table th { padding: 12px 10px; text-align: left; color: #666; font-weight: 600; border-bottom: 2px solid #ddd; }
+.inventory-table td { padding: 14px 10px; color: #333; border-bottom: 1px solid #ebebeb; }
+.inventory-table tbody tr { cursor: pointer; }
+.inventory-table tbody tr:hover { background: #f8f9ff; }
+.inventory-table tbody tr:last-child td { border-bottom: none; }
+.code-cell { color: #777; font-family: monospace; }
+.name-cell { font-weight: 600; }
+.category-tag { color: #1989fa; background: #e6f7ff; padding: 3px 9px; border-radius: 4px; }
+.low-stock { color: #ff4d4f !important; font-weight: 600; }
 
-.list-item:hover {
-  background: #f8f9ff;
-  border-color: #d9d9d9;
-}
-
-.list-item:hover .item-name {
-  color: #1a1a1a;
-}
-
-.list-item:hover .item-code {
-  color: #666;
-}
-
-.item-info {
-  flex: 1;
-}
-
-.item-name {
-  font-size: 16px;
-  font-weight: 500;
-  color: #333;
-  margin-bottom: 6px;
-}
-
-.item-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.item-code {
+.low-stock-tag {
+  display: inline-block;
   font-size: 12px;
-  color: #999;
-}
-
-.item-category {
-  font-size: 12px;
-  color: #1989fa;
-  background: #e6f7ff;
-  padding: 2px 8px;
+  color: #ff4d4f;
+  background: #fff1f0;
+  padding: 3px 9px;
   border-radius: 4px;
 }
 
-.item-stock {
-  text-align: right;
-}
-
-.stock-num {
-  font-size: 18px;
-  font-weight: 600;
-  color: #333;
-}
-
-.stock-num.low-stock {
-  color: #ff4d4f;
-}
-
-.stock-label {
-  font-size: 12px;
-  color: #999;
-}
-
-.low-stock-tag {
-  font-size: 12px;
-  color: #ff4d4f;
-  margin-top: 4px;
-}
+.normal-stock-tag { display: inline-block; font-size: 12px; color: #07c160; background: #f0fff5; padding: 3px 9px; border-radius: 4px; }
 </style>

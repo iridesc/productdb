@@ -8,6 +8,7 @@ import { getMaterials, deleteMaterial } from '@/api/material'
 import type { Material } from '@/types/material'
 import { handleError } from '@/utils/request'
 import { formatNumber } from '@/utils/number'
+import HorizontalTable from '@/components/HorizontalTable.vue'
 
 const router = useRouter()
 const loading = ref(false)
@@ -180,7 +181,7 @@ onMounted(() => {
     <!-- 表格 -->
     <div class="table-container">
       <van-pull-refresh v-model="loading" @refresh="fetchList">
-        <div class="table-wrapper">
+        <HorizontalTable min-width="720px">
           <table class="material-table">
             <thead>
               <tr>
@@ -225,7 +226,7 @@ onMounted(() => {
           </table>
 
           <van-empty v-if="!loading && list.length === 0" description="暂无物料" />
-        </div>
+        </HorizontalTable>
       </van-pull-refresh>
       <van-pagination
         v-if="pagination.total > pagination.page_size"
@@ -259,11 +260,6 @@ onMounted(() => {
 
 .table-container {
   padding: 16px;
-}
-
-.table-wrapper {
-  background: #fff;
-  border-radius: 8px;
 }
 
 .material-table {

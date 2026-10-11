@@ -35,7 +35,7 @@ export function publishSalesOrder(id: string) {
   return request.put<any>(`/sales-orders/${id}/publish`, {})
 }
 
-// 确认商品（发货用）
+// 检出商品（校验并扣减库存）
 export function confirmSalesOrderItem(orderId: string, itemId: string) {
   return request.put<any>(`/sales-orders/${orderId}/items/${itemId}/confirm`, {})
 }
