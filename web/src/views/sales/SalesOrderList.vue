@@ -17,6 +17,7 @@ const canCreate = computed(() => userStore.hasPermission('can_create_sales'))
 const loading = ref(false)
 const list = ref<SalesOrder[]>([])
 const pagination = ref({ page: 1, page_size: 20, total: 0 })
+const keyword = ref('')
 
 const statusMap: Record<string, string> = {
   draft: '草稿',
@@ -59,7 +60,8 @@ async function fetchList() {
   try {
     const res: any = await getSalesOrders({
       page: pagination.value.page,
-      page_size: pagination.value.page_size
+      page_size: pagination.value.page_size,
+      keyword: keyword.value.trim() || undefined
     })
     list.value = res.items
     pagination.value.total = res.total
@@ -69,6 +71,11 @@ async function fetchList() {
   } finally {
     loading.value = false
   }
+}
+
+function handleSearch() {
+  pagination.value.page = 1
+  fetchList()
 }
 
 function goCreate() {
@@ -97,6 +104,16 @@ onMounted(() => {
         <van-icon v-if="canCreate" name="plus" size="18" @click="goCreate" />
       </template>
     </van-nav-bar>
+
+    <div class="search-bar">
+      <van-search
+        v-model="keyword"
+        placeholder="搜索订单号/客户信息/快递单号"
+        shape="round"
+        @search="handleSearch"
+        @clear="handleSearch"
+      />
+    </div>
 
     <div class="table-container">
       <van-pull-refresh v-model="loading" @refresh="fetchList">
@@ -159,6 +176,11 @@ onMounted(() => {
 .sales-page {
   min-height: 100vh;
   background: #f5f5f5;
+}
+
+.search-bar {
+  background: #fff;
+  padding: 12px 16px;
 }
 
 .table-container {

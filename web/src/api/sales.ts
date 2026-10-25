@@ -5,6 +5,7 @@ import type { SalesOrder, SalesOrderCreate, SalesOrderImage, SalesOrderImageType
 export function getSalesOrders(params: {
   page?: number
   page_size?: number
+  keyword?: string
   status?: string
 }) {
   return request.get<{ total: number; items: SalesOrder[] }>('/sales-orders', { params })

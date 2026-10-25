@@ -15,6 +15,7 @@ const userStore = useUserStore()
 const loading = ref(false)
 const list = ref<ProductionOrder[]>([])
 const pagination = ref({ page: 1, page_size: 20, total: 0 })
+const keyword = ref('')
 
 const canManageProduction = computed(() => userStore.hasPermission('can_manage_production'))
 const canCreate = computed(() => userStore.hasPermission('can_create_production'))
@@ -40,7 +41,8 @@ async function fetchList() {
   try {
     const params: any = {
       page: pagination.value.page,
-      page_size: pagination.value.page_size
+      page_size: pagination.value.page_size,
+      keyword: keyword.value.trim() || undefined
     }
     const res: any = await getProductionOrders(params)
     list.value = res.items
@@ -51,6 +53,11 @@ async function fetchList() {
   } finally {
     loading.value = false
   }
+}
+
+function handleSearch() {
+  pagination.value.page = 1
+  fetchList()
 }
 
 function goCreate() {
@@ -74,6 +81,16 @@ onMounted(() => {
         <van-icon v-if="canCreate" name="plus" size="18" @click="goCreate" />
       </template>
     </van-nav-bar>
+
+    <div class="search-bar">
+      <van-search
+        v-model="keyword"
+        placeholder="搜索订单号/产品名称/编码"
+        shape="round"
+        @search="handleSearch"
+        @clear="handleSearch"
+      />
+    </div>
 
     <div class="table-container">
       <van-pull-refresh v-model="loading" @refresh="fetchList">
@@ -143,8 +160,13 @@ onMounted(() => {
   background: #f5f5f5;
 }
 
+.search-bar {
+  background: #fff;
+  padding: 12px 16px;
+}
+
 .table-container {
-  padding: 0 16px 16px;
+  padding: 16px;
 }
 
 .order-table {

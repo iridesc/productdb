@@ -5,6 +5,7 @@ import type { ProductionOrder, ProductionOrderCreate, ProductionOrderUpdate, Pro
 export function getProductionOrders(params: {
   page?: number
   page_size?: number
+  keyword?: string
   status?: string
   product_id?: string
 }) {
