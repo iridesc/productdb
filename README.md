@@ -171,10 +171,11 @@ productdb/
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| DATABASE_URL | postgresql://erp_user:erp_password@localhost:5432/erp_db | 数据库连接 |
-| SECRET_KEY | ***REMOVED*** | JWT 密钥 |
+| DATABASE_URL | （必填） | 数据库连接，如 `postgresql://productdb_user:<密码>@postgres:5432/productdb` |
+| SECRET_KEY | （必填） | JWT 密钥，用 `openssl rand -hex 32` 生成 |
+| POSTGRES_PASSWORD | （必填） | PostgreSQL 密码 |
 | ALGORITHM | HS256 | JWT 算法 |
-| ACCESS_TOKEN_EXPIRE_MINUTES | 30 | Token 过期时间(分钟) |
+| ACCESS_TOKEN_EXPIRE_MINUTES | 43200 | Token 过期时间(分钟) |
 
 ## 📄 许可证
 

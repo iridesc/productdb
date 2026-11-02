@@ -3,8 +3,8 @@ from functools import lru_cache
 
 
 class Settings(BaseSettings):
-    DATABASE_URL: str = "postgresql://productdb_user:***REMOVED***@localhost:5433/productdb"
-    SECRET_KEY: str = "***REMOVED***"
+    DATABASE_URL: str  # required: inject via env var
+    SECRET_KEY: str  # required: inject via env var
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 43200
     
